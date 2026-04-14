@@ -1,0 +1,9 @@
+name: generate_icon
+description: Generates 3F Studio app icon PNG files.
+publish_to: none
+
+environment:
+  sdk: ^3.0.0
+
+dependencies:
+  image: ^4.2.0
