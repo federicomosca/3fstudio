@@ -84,6 +84,29 @@ final _ownerCoursesProvider =
   return (data as List).cast<Map<String, dynamic>>();
 });
 
+final _ownerTrainersProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final studioId = ref.watch(currentStudioIdProvider);
+  if (studioId == null) return [];
+  final client = ref.watch(supabaseClientProvider);
+
+  final data = await client
+      .from('user_studio_roles')
+      .select('users(id, full_name)')
+      .eq('studio_id', studioId)
+      .inFilter('role', ['trainer', 'class_owner', 'owner']);
+
+  final Map<String, Map<String, dynamic>> byUser = {};
+  for (final row in (data as List)) {
+    final user = row['users'] as Map<String, dynamic>?;
+    if (user == null) continue;
+    byUser[user['id'] as String] ??= user;
+  }
+  return byUser.values.toList()
+    ..sort((a, b) =>
+        (a['full_name'] as String).compareTo(b['full_name'] as String));
+});
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class OwnerCalendarScreen extends ConsumerWidget {
@@ -680,6 +703,7 @@ class _CreateLessonSheet extends ConsumerStatefulWidget {
 class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
   String? _courseId;
   String? _roomId;
+  String? _trainerId;
   late DateTime _startTime;
   late DateTime _endTime;
   final _capCtrl = TextEditingController();
@@ -731,6 +755,10 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
       setState(() => _error = 'Seleziona un corso');
       return;
     }
+    if (_trainerId == null) {
+      setState(() => _error = 'Seleziona un trainer');
+      return;
+    }
     if (!_endTime.isAfter(_startTime)) {
       setState(() => _error = 'L\'orario di fine deve essere dopo l\'inizio');
       return;
@@ -740,6 +768,7 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
       final client = ref.read(supabaseClientProvider);
       await client.from('lessons').insert({
         'course_id':  _courseId,
+        'trainer_id': _trainerId,
         'starts_at':  _startTime.toUtc().toIso8601String(),
         'ends_at':    _endTime.toUtc().toIso8601String(),
         'capacity':   int.tryParse(_capCtrl.text.trim()) ?? 10,
@@ -769,6 +798,7 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
     final theme = Theme.of(context);
     final courses = ref.watch(_ownerCoursesProvider);
     final rooms = ref.watch(_ownerRoomsProvider);
+    final trainers = ref.watch(_ownerTrainersProvider);
     final timeFmt = DateFormat('HH:mm');
     final dateFmt = DateFormat('EEE d MMM', 'it');
 
@@ -843,6 +873,28 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
                       ],
                       onChanged: (v) => setState(() => _roomId = v),
                     ),
+            ),
+            const SizedBox(height: 12),
+
+            // Trainer
+            trainers.when(
+              loading: () => const LinearProgressIndicator(),
+              error: (e, _) => const SizedBox.shrink(),
+              data: (list) => DropdownButtonFormField<String?>(
+                initialValue: _trainerId,
+                decoration: const InputDecoration(
+                  labelText: 'Trainer',
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('— Seleziona —')),
+                  ...list.map((t) => DropdownMenuItem(
+                        value: t['id'] as String,
+                        child: Text(t['full_name'] as String),
+                      )),
+                ],
+                onChanged: (v) => setState(() => _trainerId = v),
+              ),
             ),
             const SizedBox(height: 12),
 

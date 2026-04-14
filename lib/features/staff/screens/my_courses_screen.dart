@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
@@ -62,7 +63,7 @@ class MyCoursesScreen extends ConsumerWidget {
                     subtitle: Text(
                         '${isGroup ? 'Collettivo' : 'Personal'} · cancella entro ${window}h'),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () {},
+                    onTap: () => context.push('/staff/courses/${c['id']}'),
                   );
                 },
               ),

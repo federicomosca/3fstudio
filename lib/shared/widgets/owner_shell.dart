@@ -152,6 +152,15 @@ class _StudioSelectorBar extends ConsumerWidget {
                 ),
                 if (studios.length > 1)
                   const Icon(Icons.expand_more, color: Colors.white, size: 20),
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: () => context.push('/owner/profile'),
+                  child: const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: Icon(Icons.account_circle_outlined,
+                        color: Colors.white, size: 26),
+                  ),
+                ),
               ],
             ),
           ),

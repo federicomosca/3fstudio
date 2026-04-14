@@ -334,11 +334,11 @@ async function main() {
 
   // Passate
   for (const l of pastLessons.filter(l => l.course_id === percorsoM3F.id).slice(0, 4)) {
-    bookings.push({ user_id: c1Auth.id, lesson_id: l.id, status: 'confirmed' });
-    bookings.push({ user_id: c2Auth.id, lesson_id: l.id, status: 'confirmed' });
+    bookings.push({ user_id: c1Auth.id, lesson_id: l.id, status: 'booked' });
+    bookings.push({ user_id: c2Auth.id, lesson_id: l.id, status: 'booked' });
   }
   for (const l of pastLessons.filter(l => l.course_id === posturale.id).slice(0, 3)) {
-    bookings.push({ user_id: c3Auth.id, lesson_id: l.id, status: 'confirmed' });
+    bookings.push({ user_id: c3Auth.id, lesson_id: l.id, status: 'booked' });
   }
 
   // Future
@@ -347,11 +347,11 @@ async function main() {
   const ptFuture   = futureLessons.filter(l => l.course_id === pt.id);
   const kbFuture   = futureLessons.filter(l => l.course_id === kettlebell.id);
 
-  for (const l of m3fFuture.slice(0, 4))  bookings.push({ user_id: c1Auth.id, lesson_id: l.id, status: 'confirmed' });
-  for (const l of m3fFuture.slice(0, 3))  bookings.push({ user_id: c2Auth.id, lesson_id: l.id, status: 'confirmed' });
-  for (const l of postFuture.slice(0, 3)) bookings.push({ user_id: c3Auth.id, lesson_id: l.id, status: 'confirmed' });
-  for (const l of kbFuture.slice(0, 2))   bookings.push({ user_id: c4Auth.id, lesson_id: l.id, status: 'confirmed' });
-  for (const l of ptFuture.slice(0, 2))   bookings.push({ user_id: c1Auth.id, lesson_id: l.id, status: 'confirmed' });
+  for (const l of m3fFuture.slice(0, 4))  bookings.push({ user_id: c1Auth.id, lesson_id: l.id, status: 'booked' });
+  for (const l of m3fFuture.slice(0, 3))  bookings.push({ user_id: c2Auth.id, lesson_id: l.id, status: 'booked' });
+  for (const l of postFuture.slice(0, 3)) bookings.push({ user_id: c3Auth.id, lesson_id: l.id, status: 'booked' });
+  for (const l of kbFuture.slice(0, 2))   bookings.push({ user_id: c4Auth.id, lesson_id: l.id, status: 'booked' });
+  for (const l of ptFuture.slice(0, 2))   bookings.push({ user_id: c1Auth.id, lesson_id: l.id, status: 'booked' });
   if (m3fFuture[4]) bookings.push({ user_id: c4Auth.id, lesson_id: m3fFuture[4].id, status: 'cancelled' });
 
   // Dedup
@@ -371,7 +371,7 @@ async function main() {
   if (ptFuture[0]) {
     const alreadyBooked = deduped.find(b => b.lesson_id === ptFuture[0].id && b.status === 'confirmed');
     if (!alreadyBooked) {
-      await insert('bookings', [{ user_id: c2Auth.id, lesson_id: ptFuture[0].id, status: 'confirmed' }]);
+      await insert('bookings', [{ user_id: c2Auth.id, lesson_id: ptFuture[0].id, status: 'booked' }]);
     }
     await insert('waitlist', [{ user_id: c3Auth.id, lesson_id: ptFuture[0].id, position: 1 }]);
     console.log('  Maria Trovato in waitlist sul PT.\n');

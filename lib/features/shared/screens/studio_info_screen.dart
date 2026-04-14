@@ -32,7 +32,7 @@ final _studioTrainersProvider =
       .from('user_studio_roles')
       .select('role, users(id, full_name, bio, avatar_url, specializations)')
       .eq('studio_id', studioId)
-      .inFilter('role', ['trainer', 'class_owner', 'gym_owner']);
+      .inFilter('role', ['trainer', 'class_owner', 'owner']);
 
   // Deduplica per utente
   final Map<String, Map<String, dynamic>> byUser = {};

@@ -320,6 +320,7 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
       final client = ref.read(supabaseClientProvider);
       await client.from('lessons').insert({
         'course_id':   _courseId,
+        'trainer_id':  user?.id,      // Il trainer che propone è il responsabile
         'starts_at':   _startTime.toUtc().toIso8601String(),
         'ends_at':     _endTime.toUtc().toIso8601String(),
         'capacity':    int.tryParse(_capCtrl.text.trim()) ?? 10,
