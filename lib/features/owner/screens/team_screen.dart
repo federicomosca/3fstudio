@@ -93,7 +93,8 @@ class _EmptyTeam extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.group_outlined, size: 64, color: Colors.grey.shade300),
+            Icon(Icons.group_outlined, size: 64,
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
             const SizedBox(height: 16),
             Text('Nessun membro nel team',
                 style: theme.textTheme.titleMedium
@@ -147,7 +148,8 @@ class _MemberTile extends StatelessWidget {
       ),
       title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(phone != null ? '$roles · $phone' : roles),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      trailing: Icon(Icons.chevron_right,
+          color: Theme.of(context).colorScheme.onSurface.withAlpha(100)),
       onTap: () {},
     );
   }
@@ -246,7 +248,7 @@ class _AddTrainerSheetState extends ConsumerState<_AddTrainerSheet> {
               child: Container(
                 width: 40, height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
+                  color: theme.colorScheme.outlineVariant,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -327,15 +329,18 @@ class _AddTrainerSheetState extends ConsumerState<_AddTrainerSheet> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
+                  color: theme.colorScheme.errorContainer,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
+                  border: Border.all(color: theme.colorScheme.error.withAlpha(100)),
                 ),
                 child: Row(children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 16),
+                  Icon(Icons.error_outline,
+                      color: theme.colorScheme.onErrorContainer, size: 16),
                   const SizedBox(width: 8),
                   Expanded(child: Text(_error!,
-                      style: const TextStyle(color: Colors.red, fontSize: 13))),
+                      style: TextStyle(
+                          color: theme.colorScheme.onErrorContainer,
+                          fontSize: 13))),
                 ]),
               ),
             ],
@@ -386,9 +391,12 @@ class _RoleChips extends StatelessWidget {
       selected: isSelected,
       onSelected: (_) => onChanged(value),
       selectedColor: color.withAlpha(30),
-      side: BorderSide(color: isSelected ? color : Colors.grey.shade300),
+      side: BorderSide(
+          color: isSelected
+              ? color
+              : Theme.of(context).colorScheme.outline),
       labelStyle: TextStyle(
-        color: isSelected ? color : Colors.grey.shade700,
+        color: isSelected ? color : Theme.of(context).colorScheme.onSurface.withAlpha(180),
         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
       ),
     );

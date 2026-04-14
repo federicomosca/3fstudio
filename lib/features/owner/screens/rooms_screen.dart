@@ -124,7 +124,8 @@ class _EmptyRooms extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.meeting_room_outlined,
-                size: 64, color: Colors.grey.shade300),
+                size: 64,
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
             const SizedBox(height: 16),
             Text('Nessuna sala',
                 style: Theme.of(context)
@@ -134,7 +135,8 @@ class _EmptyRooms extends StatelessWidget {
             const SizedBox(height: 8),
             Text('Aggiungi la prima sala con il pulsante +',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade500)),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
             const SizedBox(height: 24),
             OutlinedButton.icon(
               onPressed: onAdd,
@@ -298,7 +300,7 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
               child: Container(
                 width: 40, height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
+                  color: theme.colorScheme.outlineVariant,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -343,17 +345,19 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
+                  color: theme.colorScheme.errorContainer,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
+                  border: Border.all(color: theme.colorScheme.error.withAlpha(100)),
                 ),
                 child: Row(children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 16),
+                  Icon(Icons.error_outline,
+                      color: theme.colorScheme.onErrorContainer, size: 16),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(_error!,
-                        style: const TextStyle(
-                            color: Colors.red, fontSize: 13)),
+                        style: TextStyle(
+                            color: theme.colorScheme.onErrorContainer,
+                            fontSize: 13)),
                   ),
                 ]),
               ),

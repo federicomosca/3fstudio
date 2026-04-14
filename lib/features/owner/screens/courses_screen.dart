@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
 
@@ -80,13 +81,13 @@ class CoursesScreen extends ConsumerWidget {
                     tileColor: Theme.of(context).colorScheme.surface,
                     leading: CircleAvatar(
                       backgroundColor: isGroup
-                          ? Colors.blue.shade50
-                          : Colors.purple.shade50,
+                          ? AppTheme.blue.withAlpha(30)
+                          : const Color(0xFF9C27B0).withAlpha(30),
                       child: Icon(
                         isGroup
                             ? Icons.group_outlined
                             : Icons.person_outline,
-                        color: isGroup ? Colors.blue : Colors.purple,
+                        color: isGroup ? AppTheme.blue : const Color(0xFFCE93D8),
                       ),
                     ),
                     title: Text(c['name'] as String,
@@ -134,7 +135,8 @@ class _EmptyCourses extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.fitness_center_outlined,
-                size: 64, color: Colors.grey.shade300),
+                size: 64,
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
             const SizedBox(height: 16),
             Text('Nessun corso',
                 style: Theme.of(context)
@@ -144,7 +146,8 @@ class _EmptyCourses extends StatelessWidget {
             const SizedBox(height: 8),
             Text('Crea il primo corso con il pulsante +',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade500)),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
             const SizedBox(height: 24),
             OutlinedButton.icon(
               onPressed: onAdd,
@@ -242,7 +245,7 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
                 child: Container(
                   width: 40, height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: theme.colorScheme.outlineVariant,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -346,18 +349,19 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade50,
+                    color: theme.colorScheme.errorContainer,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
+                    border: Border.all(color: theme.colorScheme.error.withAlpha(100)),
                   ),
                   child: Row(children: [
-                    const Icon(Icons.error_outline,
-                        color: Colors.red, size: 16),
+                    Icon(Icons.error_outline,
+                        color: theme.colorScheme.onErrorContainer, size: 16),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(_error!,
-                          style: const TextStyle(
-                              color: Colors.red, fontSize: 13)),
+                          style: TextStyle(
+                              color: theme.colorScheme.onErrorContainer,
+                              fontSize: 13)),
                     ),
                   ]),
                 ),
@@ -404,10 +408,10 @@ class _TypeChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? cs.primary : Colors.grey.shade100,
+          color: selected ? cs.primary : cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: selected ? cs.primary : Colors.grey.shade300,
+            color: selected ? cs.primary : cs.outline,
           ),
         ),
         child: Row(

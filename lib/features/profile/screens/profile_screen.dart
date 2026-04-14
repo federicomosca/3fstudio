@@ -281,10 +281,12 @@ class _ProfileView extends ConsumerWidget {
               // Logout
               ListTile(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                tileColor: Colors.red.shade50,
-                leading: Icon(Icons.logout, color: Colors.red.shade700),
+                tileColor: Theme.of(context).colorScheme.errorContainer.withAlpha(80),
+                leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
                 title: Text('Esci',
-                    style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600)),
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w600)),
                 onTap: () => _confirmLogout(context, ref),
               ),
               const SizedBox(height: 24),
@@ -305,7 +307,8 @@ class _ProfileView extends ConsumerWidget {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Esci', style: TextStyle(color: Colors.red.shade700))),
+              child: Text('Esci',
+                  style: TextStyle(color: Theme.of(ctx).colorScheme.error))),
         ],
       ),
     );
@@ -367,7 +370,7 @@ class _EditForm extends StatelessWidget {
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
                     ),
-                    child: const Icon(Icons.camera_alt, size: 16, color: AppTheme.charcoal),
+                    child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
                   ),
                 ),
               ),
@@ -431,7 +434,9 @@ class _EditForm extends StatelessWidget {
               selectedColor: AppTheme.lime.withAlpha(60),
               checkmarkColor: AppTheme.charcoal,
               side: BorderSide(
-                color: selected ? AppTheme.charcoal : Colors.grey.shade300,
+                color: selected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.outline,
               ),
               labelStyle: TextStyle(
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
@@ -500,10 +505,12 @@ class _ClientProfileScreen extends ConsumerWidget {
 
           ListTile(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            tileColor: Colors.red.shade50,
-            leading: Icon(Icons.logout, color: Colors.red.shade700),
+            tileColor: Theme.of(context).colorScheme.errorContainer.withAlpha(80),
+            leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
             title: Text('Esci',
-                style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600)),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontWeight: FontWeight.w600)),
             onTap: () async {
               final confirm = await showDialog<bool>(
                 context: context,
@@ -516,7 +523,8 @@ class _ClientProfileScreen extends ConsumerWidget {
                         child: const Text('Annulla')),
                     TextButton(
                         onPressed: () => Navigator.pop(ctx, true),
-                        child: Text('Esci', style: TextStyle(color: Colors.red.shade700))),
+                        child: Text('Esci',
+                  style: TextStyle(color: Theme.of(ctx).colorScheme.error))),
                   ],
                 ),
               );
@@ -608,13 +616,15 @@ class SpecChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppTheme.lime.withAlpha(40),
+        color: AppTheme.blue.withAlpha(40),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.charcoal.withAlpha(30)),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
       ),
       child: Text(label,
-          style: const TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.charcoal)),
+          style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurface)),
     );
   }
 }
@@ -675,8 +685,10 @@ class _FieldLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(label,
-        style: const TextStyle(
-            fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.charcoal));
+        style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            color: Theme.of(context).colorScheme.onSurface.withAlpha(180)));
   }
 }
 
@@ -746,9 +758,9 @@ class _PlanCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.charcoal.withAlpha(8),
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.charcoal.withAlpha(25)),
+        border: Border.all(color: theme.colorScheme.outline),
       ),
       child: Row(
         children: [

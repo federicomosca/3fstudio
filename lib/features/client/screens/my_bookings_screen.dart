@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -62,7 +64,8 @@ class MyBookingsScreen extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.bookmark_outline,
-                      size: 56, color: Colors.grey.shade300),
+                      size: 56,
+                      color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
                   const SizedBox(height: 12),
                   Text('Nessuna prenotazione',
                       style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
@@ -163,17 +166,17 @@ class _BookingCard extends ConsumerWidget {
     final timeFmt = DateFormat('HH:mm');
     final now     = DateTime.now();
 
-    final deadline   = start.subtract(Duration(hours: cancelHours));
-    final canCancel  = status == 'booked' && start.isAfter(now);
-    final withinWindow = now.isAfter(deadline);
+    final deadline  = start.subtract(Duration(hours: cancelHours));
+    final canCancel = status == 'booked' && start.isAfter(now);
 
+    final cs = Theme.of(context).colorScheme;
     final (Color statusColor, String statusLabel, IconData statusIcon) =
         switch (status) {
-      'booked'    => (Colors.blue.shade600,  'Prenotata',  Icons.event_available_outlined),
-      'cancelled' => (Colors.grey.shade400,  'Annullata',  Icons.cancel_outlined),
-      'attended'  => (Colors.green.shade600, 'Presente',   Icons.done_all),
-      'no_show'   => (Colors.red.shade400,   'Assente',    Icons.person_off_outlined),
-      _           => (Colors.grey.shade400,  status,       Icons.help_outline),
+      'booked'    => (AppTheme.blue,                'Prenotata',  Icons.event_available_outlined),
+      'cancelled' => (cs.onSurface.withAlpha(150),  'Annullata',  Icons.cancel_outlined),
+      'attended'  => (const Color(0xFF66BB6A),      'Presente',   Icons.done_all),
+      'no_show'   => (const Color(0xFFEF5350),      'Assente',    Icons.person_off_outlined),
+      _           => (cs.onSurface.withAlpha(150),  status,       Icons.help_outline),
     };
 
     return Card(
@@ -190,7 +193,7 @@ class _BookingCard extends ConsumerWidget {
                 Container(
                   width: 4, height: 48,
                   decoration: BoxDecoration(
-                    color: muted ? Colors.grey.shade300 : statusColor,
+                    color: muted ? Theme.of(context).colorScheme.outlineVariant : statusColor,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -231,9 +234,13 @@ class _BookingCard extends ConsumerWidget {
                   const SizedBox(width: 8),
                   IconButton(
                     icon: const Icon(Icons.close, size: 18),
-                    color: Colors.red.shade300,
+                    color: Theme.of(context).colorScheme.error,
                     tooltip: 'Cancella',
-                    onPressed: () => _cancel(context, ref, lessonId),
+                    onPressed: () => _cancel(
+                      context, ref, lessonId,
+                      deadline: deadline,
+                      isCredits: showCancelDeadline,
+                    ),
                   ),
                 ],
               ],
@@ -244,7 +251,6 @@ class _BookingCard extends ConsumerWidget {
               const SizedBox(height: 8),
               _CancelDeadlineBadge(
                 deadline: deadline,
-                withinWindow: withinWindow,
                 cancelHours: cancelHours,
               ),
             ],
@@ -255,64 +261,136 @@ class _BookingCard extends ConsumerWidget {
   }
 
   Future<void> _cancel(
-      BuildContext context, WidgetRef ref, String lessonId) async {
+    BuildContext context,
+    WidgetRef ref,
+    String lessonId, {
+    required DateTime deadline,
+    required bool isCredits,
+  }) async {
+    // Ricalcola al momento del tap per non fare affidamento su stato statico
+    final lateCancel = isCredits && DateTime.now().isAfter(deadline);
+
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Annulla prenotazione'),
-        content: const Text('Sei sicuro?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('No')),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Sì, annulla',
-                  style: TextStyle(color: Colors.red.shade700))),
-        ],
-      ),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return AlertDialog(
+          title: const Text('Annulla prenotazione'),
+          content: lateCancel
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: cs.errorContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.warning_amber_outlined,
+                            size: 16, color: cs.onErrorContainer),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'La finestra gratuita è scaduta.',
+                            style: TextStyle(
+                                color: cs.onErrorContainer,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Cancellando ora perderai 1 credito dal tuo piano.\nVuoi procedere?'),
+                  ],
+                )
+              : const Text('Vuoi annullare questa prenotazione?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('No')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(
+                  lateCancel ? 'Sì, perdo il credito' : 'Sì, annulla',
+                  style: TextStyle(color: cs.error),
+                )),
+          ],
+        );
+      },
     );
     if (confirm != true) return;
-    await ref.read(bookingNotifierProvider.notifier).cancel(lessonId);
+
+    if (lateCancel) {
+      await ref
+          .read(bookingNotifierProvider.notifier)
+          .cancelWithCreditDeduction(lessonId);
+    } else {
+      await ref.read(bookingNotifierProvider.notifier).cancel(lessonId);
+    }
     onCancelled();
   }
 }
 
 // ── Cancellation deadline badge ───────────────────────────────────────────────
 
-class _CancelDeadlineBadge extends StatelessWidget {
+class _CancelDeadlineBadge extends StatefulWidget {
   final DateTime deadline;
-  final bool withinWindow;
   final int cancelHours;
 
   const _CancelDeadlineBadge({
     required this.deadline,
-    required this.withinWindow,
     required this.cancelHours,
   });
 
   @override
+  State<_CancelDeadlineBadge> createState() => _CancelDeadlineBadgeState();
+}
+
+class _CancelDeadlineBadgeState extends State<_CancelDeadlineBadge> {
+  late Timer _timer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final dateFmt = DateFormat('EEE d MMM, HH:mm', 'it');
+    final dateFmt     = DateFormat('EEE d MMM, HH:mm', 'it');
+    final withinWindow = _now.isAfter(widget.deadline);
 
     if (withinWindow) {
+      final cs = Theme.of(context).colorScheme;
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.red.shade50,
+          color: cs.errorContainer,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.red.shade200),
+          border: Border.all(color: cs.error.withAlpha(100)),
         ),
         child: Row(children: [
           Icon(Icons.warning_amber_outlined,
-              size: 14, color: Colors.red.shade700),
+              size: 14, color: cs.onErrorContainer),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
               'Finestra di cancellazione chiusa — '
               'cancellare ora fa perdere il credito',
               style: TextStyle(
-                  color: Colors.red.shade700,
+                  color: cs.onErrorContainer,
                   fontSize: 11,
                   fontWeight: FontWeight.w600),
             ),
@@ -321,7 +399,7 @@ class _CancelDeadlineBadge extends StatelessWidget {
       );
     }
 
-    final remaining = deadline.difference(DateTime.now());
+    final remaining = widget.deadline.difference(_now);
     final hours     = remaining.inHours;
     final minutes   = remaining.inMinutes % 60;
 
@@ -332,12 +410,12 @@ class _CancelDeadlineBadge extends StatelessWidget {
 
     if (hours < 2) {
       timeLabel = '${hours}h ${minutes}min';
-      color  = Colors.orange.shade800;
-      bg     = Colors.orange.shade50;
-      border = Colors.orange.shade200;
+      color  = const Color(0xFFFFB74D);
+      bg     = Colors.orange.withAlpha(30);
+      border = Colors.orange.withAlpha(100);
     } else {
-      timeLabel = 'entro ${dateFmt.format(deadline)}';
-      color  = AppTheme.charcoal;
+      timeLabel = 'entro ${dateFmt.format(widget.deadline)}';
+      color  = Theme.of(context).colorScheme.onSurface;
       bg     = AppTheme.lime.withAlpha(30);
       border = AppTheme.lime.withAlpha(80);
     }

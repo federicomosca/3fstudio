@@ -17,18 +17,18 @@ void main() async {
     anonKey: SupabaseConfig.anonKey,
   );
 
-  runApp(const ProviderScope(child: PlaceApp()));
+  runApp(const ProviderScope(child: App3FStudio()));
 }
 
-class PlaceApp extends ConsumerWidget {
-  const PlaceApp({super.key});
+class App3FStudio extends ConsumerWidget {
+  const App3FStudio({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: '3F Training',
+      title: '3FStudio',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.dark,

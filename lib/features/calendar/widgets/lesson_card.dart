@@ -83,17 +83,20 @@ class LessonCard extends StatelessWidget {
                       const SizedBox(width: 4),
                       Text(
                         lesson.courseType == 'group' ? 'Collettivo' : 'Personal',
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: Colors.grey.shade500),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface.withAlpha(150)),
                       ),
                       const SizedBox(width: 12),
                       Icon(Icons.people_outline,
-                          size: 14, color: Colors.grey.shade500),
+                          size: 14,
+                          color: theme.colorScheme.onSurface.withAlpha(150)),
                       const SizedBox(width: 4),
                       Text(
                         '$bookedCount/${lesson.capacity}',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: isFull ? Colors.red : Colors.grey.shade500,
+                          color: isFull
+                              ? theme.colorScheme.error
+                              : theme.colorScheme.onSurface.withAlpha(150),
                         ),
                       ),
                     ],

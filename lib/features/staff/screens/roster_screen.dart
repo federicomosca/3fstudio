@@ -106,7 +106,7 @@ class RosterScreen extends ConsumerWidget {
                         child: Text(
                           '$attended/$total presenti',
                           style: const TextStyle(
-                            color: AppTheme.charcoal,
+                            color: Colors.white,
                             fontWeight: FontWeight.w700,
                             fontSize: 12,
                           ),
@@ -134,11 +134,12 @@ class RosterScreen extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.person_off_outlined,
-                              size: 56, color: Colors.grey.shade300),
+                              size: 56,
+                              color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
                           const SizedBox(height: 12),
                           Text('Nessun iscritto a questa lezione',
                               style: TextStyle(
-                                  color: Colors.grey.shade500)),
+                                  color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
                         ],
                       ),
                     )
@@ -231,33 +232,33 @@ class _AttendeeRow extends StatelessWidget {
 
   Color _bgFor(String s, BuildContext context) {
     return switch (s) {
-      'attended' => const Color(0xFFF0FFF4),
-      'no_show'  => const Color(0xFFFFF5F5),
+      'attended' => Colors.green.withAlpha(25),
+      'no_show'  => Colors.red.withAlpha(25),
       _          => Theme.of(context).colorScheme.surface,
     };
   }
 
   Color _borderFor(String s, BuildContext context) {
     return switch (s) {
-      'attended' => const Color(0xFFC3E6CB),
-      'no_show'  => const Color(0xFFFED7D7),
+      'attended' => Colors.green.withAlpha(100),
+      'no_show'  => Colors.red.withAlpha(100),
       _          => Theme.of(context).colorScheme.outline,
     };
   }
 
   Color _avatarBgFor(String s) {
     return switch (s) {
-      'attended' => Colors.green.shade100,
-      'no_show'  => Colors.red.shade100,
+      'attended' => Colors.green.withAlpha(50),
+      'no_show'  => Colors.red.withAlpha(50),
       _          => AppTheme.lime.withAlpha(60),
     };
   }
 
   Color _avatarFgFor(String s) {
     return switch (s) {
-      'attended' => Colors.green.shade800,
-      'no_show'  => Colors.red.shade800,
-      _          => AppTheme.charcoal,
+      'attended' => const Color(0xFF66BB6A),
+      'no_show'  => const Color(0xFFEF5350),
+      _          => AppTheme.blue,
     };
   }
 }
@@ -271,9 +272,9 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color, icon) = switch (status) {
-      'attended' => ('Presente',  Colors.green.shade700, Icons.check_circle_outline),
-      'no_show'  => ('Assente',   Colors.red.shade700,   Icons.cancel_outlined),
-      _          => ('Prenotato', Colors.blue.shade700,  Icons.event_available_outlined),
+      'attended' => ('Presente',  const Color(0xFF66BB6A), Icons.check_circle_outline),
+      'no_show'  => ('Assente',   const Color(0xFFEF5350), Icons.cancel_outlined),
+      _          => ('Prenotato', AppTheme.blue,           Icons.event_available_outlined),
     };
 
     return Row(
@@ -316,7 +317,8 @@ class _AttendanceButtons extends StatelessWidget {
             onPressed: onAbsent,
           ),
           IconButton(
-            icon: Icon(Icons.undo, color: Colors.grey.shade400),
+            icon: Icon(Icons.undo,
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(150)),
             tooltip: 'Ripristina',
             onPressed: onReset,
           ),
@@ -334,7 +336,8 @@ class _AttendanceButtons extends StatelessWidget {
             onPressed: onPresent,
           ),
           IconButton(
-            icon: Icon(Icons.undo, color: Colors.grey.shade400),
+            icon: Icon(Icons.undo,
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(150)),
             tooltip: 'Ripristina',
             onPressed: onReset,
           ),

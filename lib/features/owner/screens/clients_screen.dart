@@ -95,7 +95,8 @@ class _EmptyClients extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.people_outline, size: 64, color: Colors.grey.shade300),
+            Icon(Icons.people_outline, size: 64,
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
             const SizedBox(height: 16),
             Text('Nessun cliente',
                 style: theme.textTheme.titleMedium
@@ -185,7 +186,8 @@ class _ClientTile extends StatelessWidget {
         ],
       ),
       isThreeLine: phone != null,
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      trailing: Icon(Icons.chevron_right,
+          color: Theme.of(context).colorScheme.onSurface.withAlpha(100)),
       onTap: () => context.push('/owner/clients/${client['id']}'),
     );
   }
@@ -279,7 +281,7 @@ class _AddClientSheetState extends ConsumerState<_AddClientSheet> {
               child: Container(
                 width: 40, height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
+                  color: theme.colorScheme.outlineVariant,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -349,15 +351,15 @@ class _AddClientSheetState extends ConsumerState<_AddClientSheet> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
+                  color: theme.colorScheme.errorContainer,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
+                  border: Border.all(color: theme.colorScheme.error.withAlpha(100)),
                 ),
                 child: Row(children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 16),
+                  Icon(Icons.error_outline, color: theme.colorScheme.onErrorContainer, size: 16),
                   const SizedBox(width: 8),
                   Expanded(child: Text(_error!,
-                      style: const TextStyle(color: Colors.red, fontSize: 13))),
+                      style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 13))),
                 ]),
               ),
             ],

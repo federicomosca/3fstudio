@@ -64,9 +64,9 @@ class AppRoles {
 
   String get homeRoute => switch (primaryRole) {
         UserRole.admin      => '/admin/dashboard',
-        UserRole.gymOwner   => '/owner/dashboard',
+        UserRole.gymOwner   => '/owner/calendar',
         UserRole.classOwner => '/staff/calendar',
-        UserRole.trainer    => '/staff/schedule',
+        UserRole.trainer    => '/staff/calendar',
         UserRole.client     => '/client/calendar',
       };
 

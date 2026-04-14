@@ -52,7 +52,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 shape: BoxShape.circle,
               ),
               todayTextStyle: TextStyle(
-                color: AppTheme.charcoal,
+                color: Colors.white,
                 fontWeight: FontWeight.w800,
               ),
               // Selezionato: cerchio charcoal con testo bianco
@@ -70,7 +70,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 shape: BoxShape.circle,
               ),
               markerSize: 5,
-              weekendTextStyle: TextStyle(color: Color(0xFF888888)),
+              weekendTextStyle: TextStyle(color: Color(0xFFAAAAAA)),
             ),
             eventLoader: (day) {
               final days = lessonDays.whenOrNull(data: (d) => d) ?? {};
@@ -115,11 +115,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.event_busy,
-                            size: 48, color: Colors.grey.shade300),
+                            size: 48,
+                            color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
                         const SizedBox(height: 12),
                         Text(
                           'Nessuna lezione programmata',
-                          style: TextStyle(color: Colors.grey.shade500),
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface.withAlpha(150)),
                         ),
                       ],
                     ),

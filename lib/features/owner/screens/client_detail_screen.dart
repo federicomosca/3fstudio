@@ -96,7 +96,7 @@ class _ClientBody extends ConsumerWidget {
                     child: Text(
                       name.isNotEmpty ? name[0].toUpperCase() : '?',
                       style: const TextStyle(
-                        color: AppTheme.charcoal,
+                        color: Colors.white,
                         fontSize: 28,
                         fontWeight: FontWeight.w900,
                       ),
@@ -192,17 +192,17 @@ class _PlanCard extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.orange.shade50,
+          color: Colors.orange.withAlpha(30),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.orange.shade200),
+          border: Border.all(color: Colors.orange.withAlpha(100)),
         ),
         child: Row(children: [
-          Icon(Icons.warning_amber_outlined,
-              color: Colors.orange.shade700, size: 20),
+          const Icon(Icons.warning_amber_outlined,
+              color: Color(0xFFFFB74D), size: 20),
           const SizedBox(width: 10),
           Text('Nessun piano attivo',
-              style: TextStyle(
-                  color: Colors.orange.shade700,
+              style: const TextStyle(
+                  color: Color(0xFFFFB74D),
                   fontWeight: FontWeight.w600)),
         ]),
       );
@@ -226,17 +226,20 @@ class _PlanCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isWarning ? Colors.orange.shade50 : Theme.of(context).colorScheme.surface,
+        color: isWarning
+            ? Colors.orange.withAlpha(30)
+            : Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
             color: isWarning
-                ? Colors.orange.shade200
+                ? Colors.orange.withAlpha(100)
                 : Theme.of(context).colorScheme.outline),
       ),
       child: Row(children: [
         Icon(Icons.card_membership_outlined,
-            color:
-                isWarning ? Colors.orange.shade700 : AppTheme.charcoal,
+            color: isWarning
+                ? const Color(0xFFFFB74D)
+                : Theme.of(context).colorScheme.onSurface.withAlpha(180),
             size: 22),
         const SizedBox(width: 12),
         Expanded(
@@ -249,7 +252,7 @@ class _PlanCard extends StatelessWidget {
                 Text('$credits crediti rimanenti',
                     style: TextStyle(
                         color: isLowCredits
-                            ? Colors.orange.shade700
+                            ? const Color(0xFFFFB74D)
                             : Theme.of(context).colorScheme.onSurface.withAlpha(180),
                         fontSize: 13)),
               if (expDate != null)
@@ -257,7 +260,7 @@ class _PlanCard extends StatelessWidget {
                   'Scade il ${DateFormat('d MMM yyyy', 'it_IT').format(expDate)}',
                   style: TextStyle(
                       color: isExpiringSoon
-                          ? Colors.orange.shade700
+                          ? const Color(0xFFFFB74D)
                           : Theme.of(context).colorScheme.onSurface.withAlpha(180),
                       fontSize: 13),
                 ),
@@ -292,19 +295,20 @@ class _BookingRow extends StatelessWidget {
     String statusLabel;
     IconData statusIcon;
 
+    final cs = Theme.of(context).colorScheme;
     switch (status) {
       case 'attended':
-        statusColor = Colors.green.shade600;
+        statusColor = const Color(0xFF66BB6A);
         statusLabel = 'Presente';
         statusIcon  = Icons.check_circle_outline;
         break;
       case 'no_show':
-        statusColor = Colors.red.shade600;
+        statusColor = const Color(0xFFEF5350);
         statusLabel = 'Assente';
         statusIcon  = Icons.cancel_outlined;
         break;
       default:
-        statusColor = isPast ? Colors.grey.shade500 : Colors.blue.shade600;
+        statusColor = isPast ? cs.onSurface.withAlpha(150) : AppTheme.blue;
         statusLabel = isPast ? 'Completata' : 'Prenotata';
         statusIcon  = isPast ? Icons.history : Icons.event_available_outlined;
     }
@@ -359,10 +363,10 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w800,
-          color: AppTheme.charcoal,
+          color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
           letterSpacing: 0.5,
         ));
   }

@@ -247,10 +247,10 @@ class _TrainerTile extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(s,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.w600,
-                                        color: AppTheme.charcoal)),
+                                        color: Theme.of(context).colorScheme.onSurface)),
                               ))
                           .toList(),
                     ),
@@ -258,8 +258,9 @@ class _TrainerTile extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right,
-                color: Colors.grey, size: 18),
+            Icon(Icons.chevron_right,
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(100),
+                size: 18),
           ],
         ),
       ),
@@ -276,10 +277,10 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w800,
-          color: AppTheme.charcoal,
+          color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
           letterSpacing: 0.4,
         ),
       );
@@ -318,7 +319,8 @@ class _InfoRow extends StatelessWidget {
           border: Border.all(color: Theme.of(context).colorScheme.outline),
         ),
         child: Row(children: [
-          Icon(icon, size: 18, color: AppTheme.charcoal),
+          Icon(icon, size: 18,
+              color: Theme.of(context).colorScheme.onSurface.withAlpha(180)),
           const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,

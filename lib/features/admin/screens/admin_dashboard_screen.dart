@@ -26,7 +26,8 @@ class AdminDashboardScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
           Text('Azioni rapide', style: theme.textTheme.titleSmall?.copyWith(
-              color: Colors.grey.shade600, fontWeight: FontWeight.bold)),
+              color: theme.colorScheme.onSurface.withAlpha(180),
+              fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           _ActionTile(
             icon: Icons.store_outlined,
@@ -67,7 +68,7 @@ class _StatCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.primaryContainer.withAlpha(60),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(color: Theme.of(context).colorScheme.outline),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -83,7 +84,7 @@ class _StatCard extends StatelessWidget {
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
-                    ?.copyWith(color: Colors.grey.shade600)),
+                    ?.copyWith(color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
           ],
         ),
       ),
@@ -111,7 +112,8 @@ class _ActionTile extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       leading: Icon(icon, color: c),
       title: Text(label, style: TextStyle(color: c)),
-      trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
+      trailing: Icon(Icons.chevron_right,
+          color: Theme.of(context).colorScheme.onSurface.withAlpha(100)),
       onTap: onTap,
     );
   }

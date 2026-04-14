@@ -87,9 +87,9 @@ class _PublicProfileBody extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFEAEAEA)),
+                      border: Border.all(color: Theme.of(context).colorScheme.outline),
                     ),
                     child: Text(
                       profile.bio!,
@@ -120,11 +120,14 @@ class _PublicProfileBody extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 32),
                       child: Column(
                         children: [
-                          Icon(Icons.person_outline, size: 56, color: Colors.grey.shade300),
+                          Icon(Icons.person_outline, size: 56,
+                              color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
                           const SizedBox(height: 12),
                           Text(
                             'Profilo ancora in costruzione',
-                            style: TextStyle(color: Colors.grey.shade400, fontSize: 15),
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
+                                fontSize: 15),
                           ),
                         ],
                       ),
@@ -148,10 +151,10 @@ class _Section extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize:      13,
         fontWeight:    FontWeight.w800,
-        color:         AppTheme.charcoal,
+        color:         Theme.of(context).colorScheme.onSurface.withAlpha(180),
         letterSpacing: 0.5,
       ),
     );

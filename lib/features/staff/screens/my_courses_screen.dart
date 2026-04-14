@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../shared/widgets/coming_soon.dart';
 
@@ -47,13 +48,14 @@ class MyCoursesScreen extends ConsumerWidget {
                   return ListTile(
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
-                    tileColor: Colors.white,
+                    tileColor: Theme.of(context).colorScheme.surface,
                     leading: CircleAvatar(
-                      backgroundColor:
-                          isGroup ? Colors.blue.shade50 : Colors.purple.shade50,
+                      backgroundColor: isGroup
+                          ? AppTheme.blue.withAlpha(30)
+                          : const Color(0xFF9C27B0).withAlpha(30),
                       child: Icon(
                         isGroup ? Icons.group_outlined : Icons.person_outline,
-                        color: isGroup ? Colors.blue : Colors.purple,
+                        color: isGroup ? AppTheme.blue : const Color(0xFFCE93D8),
                       ),
                     ),
                     title: Text(c['name'] as String),

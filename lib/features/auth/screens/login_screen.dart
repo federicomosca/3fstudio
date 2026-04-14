@@ -142,7 +142,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
 
           // ── Form (white) ─────────────────────────────────────────────────
-          Container(
+          // Force light theme inside the white section so text/input colors
+          // are dark-on-white regardless of the global dark ThemeMode.
+          Theme(
+            data: AppTheme.light,
+            child: Container(
             decoration: const BoxDecoration(
               color: AppTheme.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -160,15 +164,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   const Text(
                     'Accedi',
                     style: TextStyle(
-                      fontSize:     22,
-                      fontWeight:   FontWeight.w900,
+                      fontSize:      22,
+                      fontWeight:    FontWeight.w900,
                       letterSpacing: -0.5,
+                      color:         Color(0xFF0A1726),
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
+                  const Text(
                     'Bentornato nel tuo studio 👊',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withAlpha(150), fontSize: 13),
+                    style: TextStyle(
+                      color:    Color(0x960A1726),
+                      fontSize: 13,
+                    ),
                   ),
                   const SizedBox(height: 24),
 
@@ -213,7 +221,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     child: TextButton(
                       onPressed: _showPasswordReset,
                       style: TextButton.styleFrom(
-                        foregroundColor: Theme.of(context).colorScheme.onSurface.withAlpha(180),
+                        foregroundColor: const Color(0xB40A1726),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 4, vertical: 8),
                       ),
@@ -228,20 +236,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 12),
                       decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.red.shade200),
+                        color:         const Color(0xFFFFEBEE),
+                        borderRadius:  BorderRadius.circular(10),
+                        border: Border.all(
+                            color: const Color(0xFFD32F2F).withAlpha(100)),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.error_outline,
-                              color: Colors.red.shade600, size: 18),
+                          const Icon(Icons.error_outline,
+                              color: Color(0xFFB71C1C),
+                              size: 18),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               _error!,
-                              style: TextStyle(
-                                  color: Colors.red.shade700, fontSize: 13),
+                              style: const TextStyle(
+                                  color:    Color(0xFFB71C1C),
+                                  fontSize: 13),
                             ),
                           ),
                         ],
@@ -268,6 +279,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
             ),
           ),
+          ), // Theme light
         ],
       ),
     );
@@ -332,7 +344,7 @@ class _PasswordResetSheetState extends State<_PasswordResetSheet> {
             child: Container(
               width: 40, height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
+                color: Theme.of(context).colorScheme.outlineVariant,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -341,8 +353,9 @@ class _PasswordResetSheetState extends State<_PasswordResetSheet> {
 
           if (_sent) ...[
             // Conferma invio
-            const Icon(Icons.mark_email_read_outlined,
-                size: 48, color: AppTheme.charcoal),
+            Icon(Icons.mark_email_read_outlined,
+                size: 48,
+                color: Theme.of(context).colorScheme.primary),
             const SizedBox(height: 16),
             const Text('Email inviata!',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
@@ -383,7 +396,8 @@ class _PasswordResetSheetState extends State<_PasswordResetSheet> {
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(_error!,
-                  style: TextStyle(color: Colors.red.shade600, fontSize: 13)),
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.error, fontSize: 13)),
             ],
 
             const SizedBox(height: 24),

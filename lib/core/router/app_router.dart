@@ -12,7 +12,7 @@ import '../../features/admin/screens/studios_screen.dart';
 import '../../features/admin/screens/global_users_screen.dart';
 
 // Owner
-import '../../features/owner/screens/owner_dashboard_screen.dart';
+import '../../features/owner/screens/owner_calendar_screen.dart';
 import '../../features/owner/screens/courses_screen.dart';
 import '../../features/owner/screens/course_detail_screen.dart';
 import '../../features/owner/screens/rooms_screen.dart';
@@ -128,8 +128,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (ctx, state, child) => OwnerShell(child: child),
         routes: [
-          GoRoute(path: '/owner/dashboard',
-              builder: (ctx, state) => const OwnerDashboardScreen()),
+          GoRoute(path: '/owner/calendar',
+              builder: (ctx, state) => const OwnerCalendarScreen()),
+          GoRoute(path: '/owner/roster/:lessonId',
+              builder: (ctx, state) => RosterScreen(
+                    lessonId: state.pathParameters['lessonId']!)),
+          GoRoute(path: '/owner/requests',
+              builder: (ctx, state) => const PendingLessonsScreen()),
           GoRoute(path: '/owner/courses',
               builder: (ctx, state) => const CoursesScreen()),
           GoRoute(path: '/owner/courses/:courseId',
@@ -148,6 +153,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               builder: (ctx, state) => const PlansScreen()),
           GoRoute(path: '/owner/report',
               builder: (ctx, state) => const ReportScreen()),
+          GoRoute(path: '/owner/notifications',
+              builder: (ctx, state) => const NotificationsScreen()),
           GoRoute(path: '/owner/profile',
               builder: (ctx, state) => const ProfileScreen()),
         ],

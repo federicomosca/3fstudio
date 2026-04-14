@@ -144,7 +144,7 @@ class OwnerDashboardScreen extends ConsumerWidget {
                   icon: Icons.people_outline,
                   label: 'Prenotazioni',
                   value: '${s['bookings'] ?? 0}',
-                  color: Colors.green.shade600,
+                  color: const Color(0xFF66BB6A),
                 ),
               ],
             ),
@@ -265,7 +265,7 @@ class _OnboardingCard extends StatelessWidget {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 6,
-                backgroundColor: Colors.grey.shade200,
+                backgroundColor: theme.colorScheme.outline.withAlpha(80),
                 valueColor: AlwaysStoppedAnimation(theme.colorScheme.primary),
               ),
             ),
@@ -331,7 +331,7 @@ class _OnboardingStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = done
-        ? Colors.green.shade600
+        ? const Color(0xFF66BB6A)
         : theme.colorScheme.primary;
 
     return InkWell(
@@ -352,16 +352,16 @@ class _OnboardingStep extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: done
-                    ? Colors.green.shade50
+                    ? Colors.green.withAlpha(40)
                     : theme.colorScheme.primary.withAlpha(15),
                 border: Border.all(
                   color: done
-                      ? Colors.green.shade300
+                      ? Colors.green.withAlpha(120)
                       : theme.colorScheme.primary.withAlpha(80),
                 ),
               ),
               child: done
-                  ? Icon(Icons.check, size: 18, color: Colors.green.shade600)
+                  ? const Icon(Icons.check, size: 18, color: Color(0xFF66BB6A))
                   : Icon(icon, size: 18, color: theme.colorScheme.primary),
             ),
             const SizedBox(width: 14),

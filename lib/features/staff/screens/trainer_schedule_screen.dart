@@ -45,10 +45,12 @@ class TrainerScheduleScreen extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.event_available,
-                      size: 56, color: Colors.grey.shade300),
+                      size: 56,
+                      color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
                   const SizedBox(height: 12),
                   Text('Nessuna lezione in programma',
-                      style: TextStyle(color: Colors.grey.shade500)),
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
                 ],
               ),
             );
@@ -74,7 +76,7 @@ class TrainerScheduleScreen extends ConsumerWidget {
                     child: Text(
                       dateFmt.format(day),
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Colors.grey.shade600,
+                            color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
                             fontWeight: FontWeight.bold,
                           ),
                     ),
@@ -100,7 +102,8 @@ class TrainerScheduleScreen extends ConsumerWidget {
                                     fontWeight: FontWeight.bold, fontSize: 14)),
                             Text(timeFmt.format(end),
                                 style: TextStyle(
-                                    fontSize: 11, color: Colors.grey.shade500)),
+                                    fontSize: 11,
+                                    color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
                           ],
                         ),
                         title: Text(course['name'] as String),

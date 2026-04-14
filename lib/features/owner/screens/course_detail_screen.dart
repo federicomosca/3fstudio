@@ -279,14 +279,16 @@ class _LessonRow extends StatelessWidget {
                 const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: isFull
-                  ? Colors.red.shade50
+                  ? Theme.of(context).colorScheme.errorContainer
                   : AppTheme.lime.withAlpha(40),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
               '$count/$cap',
               style: TextStyle(
-                color: isFull ? Colors.red.shade700 : AppTheme.charcoal,
+                color: isFull
+                    ? Theme.of(context).colorScheme.onErrorContainer
+                    : Theme.of(context).colorScheme.onSurface,
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
@@ -307,10 +309,10 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w800,
-          color: AppTheme.charcoal,
+          color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
           letterSpacing: 0.5,
         ));
   }
@@ -333,7 +335,7 @@ class _InfoChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: AppTheme.charcoal),
+          Icon(icon, size: 14, color: Theme.of(context).colorScheme.onSurface.withAlpha(180)),
           const SizedBox(width: 5),
           Text(label,
               style: const TextStyle(

@@ -77,7 +77,7 @@ final upcomingBookingsProvider =
       .from('bookings')
       .select('lesson_id, lessons(starts_at, ends_at, courses(name))')
       .eq('user_id', user.id)
-      .eq('status', 'confirmed')
+      .eq('status', 'booked')
       .gte('lessons.starts_at', now)
       .order('lessons(starts_at)')
       .limit(5);

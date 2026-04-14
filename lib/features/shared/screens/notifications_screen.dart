@@ -66,7 +66,8 @@ class NotificationsScreen extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.notifications_none_outlined,
-                        size: 64, color: Colors.grey.shade300),
+                        size: 64,
+                        color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
                     const SizedBox(height: 16),
                     Text('Nessuna notifica',
                         style: Theme.of(context)
@@ -80,7 +81,8 @@ class NotificationsScreen extends ConsumerWidget {
                       'Le comunicazioni di Vicio\nappaiono qui.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                          color: Colors.grey.shade400, fontSize: 13),
+                          color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
+                          fontSize: 13),
                     ),
                   ],
                 ),
@@ -157,20 +159,24 @@ class _NotifCard extends StatelessWidget {
             children: [
               if (author != null) ...[
                 Icon(Icons.person_outline,
-                    size: 12, color: Colors.grey.shade400),
+                    size: 12,
+                    color: Theme.of(context).colorScheme.onSurface.withAlpha(130)),
                 const SizedBox(width: 4),
                 Text(author,
                     style: TextStyle(
-                        color: Colors.grey.shade400, fontSize: 11)),
+                        color: Theme.of(context).colorScheme.onSurface.withAlpha(130),
+                        fontSize: 11)),
                 const SizedBox(width: 12),
               ],
               if (dt != null) ...[
-                Icon(Icons.schedule, size: 12, color: Colors.grey.shade400),
+                Icon(Icons.schedule, size: 12,
+                    color: Theme.of(context).colorScheme.onSurface.withAlpha(130)),
                 const SizedBox(width: 4),
                 Text(
                   DateFormat('d MMM, HH:mm', 'it_IT').format(dt),
                   style: TextStyle(
-                      color: Colors.grey.shade400, fontSize: 11),
+                      color: Theme.of(context).colorScheme.onSurface.withAlpha(130),
+                      fontSize: 11),
                 ),
               ],
             ],

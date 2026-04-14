@@ -40,6 +40,39 @@ final _staffLessonsForDayProvider =
   }
 
   final data = await query.order('starts_at');
+  // Supabase returns courses:null for lessons that don't match the join filter
+  // instead of excluding them — filter them out explicitly.
+  return (data as List)
+      .where((l) => l['courses'] != null)
+      .cast<Map<String, dynamic>>()
+      .toList();
+});
+
+// ── Class-owner course/room providers for lesson proposals ────────────────────
+
+final _myOwnedCoursesProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return [];
+  final client = ref.watch(supabaseClientProvider);
+  final data = await client
+      .from('courses')
+      .select('id, name, type')
+      .eq('class_owner_id', user.id)
+      .order('name');
+  return (data as List).cast<Map<String, dynamic>>();
+});
+
+final _staffRoomsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final studioId = ref.watch(currentStudioIdProvider);
+  if (studioId == null) return [];
+  final client = ref.watch(supabaseClientProvider);
+  final data = await client
+      .from('rooms')
+      .select('id, name, capacity')
+      .eq('studio_id', studioId)
+      .order('name');
   return (data as List).cast<Map<String, dynamic>>();
 });
 
@@ -57,11 +90,21 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
   Widget build(BuildContext context) {
     final selectedDay = ref.watch(_staffSelectedDayProvider);
     final lessons     = ref.watch(_staffLessonsForDayProvider(selectedDay));
+    final roles       = ref.watch(appRolesProvider).whenOrNull(data: (r) => r);
+    final isClassOwner = roles?.isClassOwner == true;
     final timeFmt     = DateFormat('HH:mm');
     final dayFmt      = DateFormat('EEEE d MMMM', 'it_IT');
+    final theme       = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Calendario')),
+      floatingActionButton: isClassOwner
+          ? FloatingActionButton.extended(
+              onPressed: () => _showProposeSheet(context, selectedDay),
+              icon: const Icon(Icons.add),
+              label: const Text('Proponi lezione'),
+            )
+          : null,
       body: Column(
         children: [
           TableCalendar(
@@ -81,7 +124,7 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                 shape: BoxShape.circle,
               ),
               todayTextStyle: TextStyle(
-                color: AppTheme.charcoal,
+                color: Colors.white,
                 fontWeight: FontWeight.w800,
               ),
               selectedDecoration: BoxDecoration(
@@ -97,7 +140,7 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                 shape: BoxShape.circle,
               ),
               markerSize: 5,
-              weekendTextStyle: TextStyle(color: Color(0xFF888888)),
+              weekendTextStyle: TextStyle(color: Color(0xFFAAAAAA)),
             ),
             onDaySelected: (selected, _) =>
                 ref.read(_staffSelectedDayProvider.notifier).state = selected,
@@ -129,10 +172,12 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.event_busy,
-                              size: 48, color: Colors.grey.shade300),
+                              size: 48,
+                              color: theme.colorScheme.onSurface.withAlpha(60)),
                           const SizedBox(height: 12),
                           Text('Nessuna lezione',
-                              style: TextStyle(color: Colors.grey.shade500)),
+                              style: TextStyle(
+                                  color: theme.colorScheme.onSurface.withAlpha(150))),
                         ],
                       ),
                     )
@@ -180,6 +225,335 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showProposeSheet(BuildContext context, DateTime date) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _ProposeLessonSheet(
+        initialDate: date,
+        onProposed: () => ref.invalidate(_staffLessonsForDayProvider),
+      ),
+    );
+  }
+}
+
+// ── Propose lesson sheet (class_owner) ────────────────────────────────────────
+
+class _ProposeLessonSheet extends ConsumerStatefulWidget {
+  final DateTime initialDate;
+  final VoidCallback onProposed;
+  const _ProposeLessonSheet(
+      {required this.initialDate, required this.onProposed});
+
+  @override
+  ConsumerState<_ProposeLessonSheet> createState() =>
+      _ProposeLessonSheetState();
+}
+
+class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
+  String? _courseId;
+  String? _roomId;
+  late DateTime _startTime;
+  late DateTime _endTime;
+  final _capCtrl = TextEditingController();
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final d = widget.initialDate;
+    _startTime = DateTime(d.year, d.month, d.day, 9, 0);
+    _endTime = DateTime(d.year, d.month, d.day, 10, 0);
+    _capCtrl.text = '10';
+  }
+
+  @override
+  void dispose() {
+    _capCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime({required bool isStart}) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(isStart ? _startTime : _endTime),
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        _startTime = DateTime(_startTime.year, _startTime.month,
+            _startTime.day, picked.hour, picked.minute);
+        if (!_endTime.isAfter(_startTime)) {
+          _endTime = _startTime.add(const Duration(hours: 1));
+        }
+      } else {
+        _endTime = DateTime(_endTime.year, _endTime.month, _endTime.day,
+            picked.hour, picked.minute);
+      }
+    });
+  }
+
+  Future<void> _submit() async {
+    if (_courseId == null) {
+      setState(() => _error = 'Seleziona un corso');
+      return;
+    }
+    if (!_endTime.isAfter(_startTime)) {
+      setState(() => _error = 'L\'orario di fine deve essere dopo l\'inizio');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final user = ref.read(currentUserProvider);
+      final client = ref.read(supabaseClientProvider);
+      await client.from('lessons').insert({
+        'course_id':   _courseId,
+        'starts_at':   _startTime.toUtc().toIso8601String(),
+        'ends_at':     _endTime.toUtc().toIso8601String(),
+        'capacity':    int.tryParse(_capCtrl.text.trim()) ?? 10,
+        if (_roomId != null) 'room_id': _roomId,
+        'status':      'pending',     // Richiede approvazione owner
+        'proposed_by': user?.id,
+      });
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onProposed();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Proposta inviata all\'owner per approvazione'),
+            backgroundColor: Color(0xFFFFB74D),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(
+          () => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final courses = ref.watch(_myOwnedCoursesProvider);
+    final rooms = ref.watch(_staffRoomsProvider);
+    final timeFmt = DateFormat('HH:mm');
+    final dateFmt = DateFormat('EEE d MMM', 'it');
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Proponi lezione',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            Text(
+              '${dateFmt.format(widget.initialDate)} · in attesa di approvazione',
+              style: TextStyle(
+                  fontSize: 13,
+                  color: const Color(0xFFFFB74D)),
+            ),
+            const SizedBox(height: 24),
+
+            // Corso
+            courses.when(
+              loading: () => const LinearProgressIndicator(),
+              error: (e, _) => const SizedBox.shrink(),
+              data: (list) => list.isEmpty
+                  ? Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Nessun corso assegnato. Contatta l\'owner.',
+                        style: TextStyle(
+                            color: theme.colorScheme.onErrorContainer),
+                      ),
+                    )
+                  : DropdownButtonFormField<String?>(
+                      initialValue: _courseId,
+                      decoration: const InputDecoration(
+                        labelText: 'Corso',
+                        prefixIcon: Icon(Icons.fitness_center_outlined),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                            value: null, child: Text('— Seleziona —')),
+                        ...list.map((c) => DropdownMenuItem(
+                              value: c['id'] as String,
+                              child: Text(c['name'] as String),
+                            )),
+                      ],
+                      onChanged: (v) => setState(() => _courseId = v),
+                    ),
+            ),
+            const SizedBox(height: 12),
+
+            // Sala
+            rooms.when(
+              loading: () => const SizedBox.shrink(),
+              error: (e, _) => const SizedBox.shrink(),
+              data: (list) => list.isEmpty
+                  ? const SizedBox.shrink()
+                  : DropdownButtonFormField<String?>(
+                      initialValue: _roomId,
+                      decoration: const InputDecoration(
+                        labelText: 'Sala (opzionale)',
+                        prefixIcon: Icon(Icons.meeting_room_outlined),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                            value: null, child: Text('— Nessuna —')),
+                        ...list.map((r) => DropdownMenuItem(
+                              value: r['id'] as String,
+                              child: Text(r['name'] as String),
+                            )),
+                      ],
+                      onChanged: (v) => setState(() => _roomId = v),
+                    ),
+            ),
+            const SizedBox(height: 12),
+
+            // Orari
+            Row(
+              children: [
+                Expanded(
+                  child: _TimePickerTile(
+                    label: 'Inizio',
+                    time: timeFmt.format(_startTime),
+                    onTap: () => _pickTime(isStart: true),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _TimePickerTile(
+                    label: 'Fine',
+                    time: timeFmt.format(_endTime),
+                    onTap: () => _pickTime(isStart: false),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Capacità
+            TextFormField(
+              controller: _capCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Posti disponibili',
+                prefixIcon: Icon(Icons.people_outline),
+              ),
+            ),
+
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(_error!,
+                    style: TextStyle(
+                        color: theme.colorScheme.onErrorContainer,
+                        fontSize: 13)),
+              ),
+            ],
+
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _loading ? null : _submit,
+                child: _loading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child:
+                            CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Invia proposta'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TimePickerTile extends StatelessWidget {
+  final String label;
+  final String time;
+  final VoidCallback onTap;
+
+  const _TimePickerTile(
+      {required this.label, required this.time, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.colorScheme.outline),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.access_time_outlined,
+                size: 18,
+                color: theme.colorScheme.onSurface.withAlpha(150)),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withAlpha(150))),
+                Text(time,
+                    style:
+                        const TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

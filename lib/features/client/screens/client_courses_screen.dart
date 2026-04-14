@@ -75,7 +75,8 @@ class ClientCoursesScreen extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.fitness_center_outlined,
-                      size: 56, color: Colors.grey.shade300),
+                      size: 56,
+                      color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
                   const SizedBox(height: 12),
                   Text('Nessun corso disponibile',
                       style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
@@ -158,17 +159,17 @@ class _CourseCard extends StatelessWidget {
               width: 44, height: 44,
               decoration: BoxDecoration(
                 color: enrolled
-                    ? AppTheme.charcoal
+                    ? AppTheme.navy
                     : (isGroup
-                        ? Colors.blue.shade50
-                        : Colors.purple.shade50),
+                        ? AppTheme.blue.withAlpha(30)
+                        : const Color(0xFF9C27B0).withAlpha(30)),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
                 isGroup ? Icons.group_outlined : Icons.person_outline,
                 color: enrolled
-                    ? AppTheme.lime
-                    : (isGroup ? Colors.blue : Colors.purple),
+                    ? AppTheme.blue
+                    : (isGroup ? AppTheme.blue : const Color(0xFFCE93D8)),
                 size: 22,
               ),
             ),
@@ -195,12 +196,12 @@ class _CourseCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: AppTheme.charcoal,
+                            color: AppTheme.blue,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: const Text('Iscritto',
                               style: TextStyle(
-                                  color: AppTheme.lime,
+                                  color: Colors.white,
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700)),
                         ),
@@ -227,8 +228,9 @@ class _CourseCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right,
-                color: Colors.grey, size: 20),
+            Icon(Icons.chevron_right,
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(100),
+                size: 20),
           ],
         ),
       ),
@@ -246,10 +248,10 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w800,
-        color: AppTheme.charcoal,
+        color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
         letterSpacing: 0.4,
       ),
     );
