@@ -9,7 +9,9 @@
       "Bash(npm install:*)",
       "Bash(flutter pub:*)",
       "Bash(dart pub:*)",
-      "Bash(dart run:*)"
+      "Bash(dart run:*)",
+      "Bash(flutter devices:*)",
+      "Bash(flutter run:*)"
     ]
   }
 }

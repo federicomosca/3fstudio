@@ -151,10 +151,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               color: AppTheme.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             ),
-            padding: EdgeInsets.fromLTRB(
-              28, 32, 28,
-              MediaQuery.of(context).viewInsets.bottom + 32,
-            ),
+            padding: const EdgeInsets.fromLTRB(28, 32, 28, 32),
             child: Form(
               key: _formKey,
               child: Column(

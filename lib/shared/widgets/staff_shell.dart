@@ -32,11 +32,6 @@ class StaffShell extends StatelessWidget {
             selectedIcon: Icon(Icons.home),
             label:        'Studio',
           ),
-          NavigationDestination(
-            icon:         Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label:        'Profilo',
-          ),
         ],
       ),
     );
@@ -46,7 +41,6 @@ class StaffShell extends StatelessWidget {
     if (loc.startsWith('/staff/courses') ||
         loc.startsWith('/staff/roster'))  { return 1; }
     if (loc.startsWith('/staff/studio'))  { return 2; }
-    if (loc.startsWith('/staff/profile')) { return 3; }
     return 0;
   }
 
@@ -55,7 +49,6 @@ class StaffShell extends StatelessWidget {
       case 0: context.go('/staff/calendar');
       case 1: context.go('/staff/courses');
       case 2: context.go('/staff/studio');
-      case 3: context.go('/staff/profile');
     }
   }
 }

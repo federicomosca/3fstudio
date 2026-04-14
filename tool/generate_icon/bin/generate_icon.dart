@@ -9,18 +9,19 @@ void main() {
   Directory(out).createSync(recursive: true);
 
   // ── Brand colours ────────────────────────────────────────────────────────────
-  final charcoal = ColorRgb8(0x1A, 0x1A, 0x1A);
-  final lime     = ColorRgb8(0xC5, 0xD8, 0x00);
-  final limeA    = ColorRgba8(0xC5, 0xD8, 0x00, 0xFF);
-  final clear    = ColorRgba8(0, 0, 0, 0);
+  final lightBg = ColorRgb8(0xED, 0xF2, 0xF8);  // sfondo chiaro
+  final navy    = ColorRgb8(0x0A, 0x17, 0x26);  // testo
+  final navyA   = ColorRgba8(0x0A, 0x17, 0x26, 0xFF);
+  final blue    = ColorRgb8(0x00, 0x81, 0xC8);  // bordo
+  final clear   = ColorRgba8(0, 0, 0, 0);
 
-  // ── Full icon (charcoal bg + lime "3F") ──────────────────────────────────────
+  // ── Full icon (light bg + navy "3F" + blue border) ───────────────────────────
   {
     final img = Image(width: size, height: size);
-    fill(img, color: charcoal);
+    fill(img, color: lightBg);
     _drawRoundRect(img, 80, 80, size - 80, size - 80,
-        radius: 90, color: lime, strokeWidth: 26);
-    _drawText3F(img, size, lime);
+        radius: 90, color: blue, strokeWidth: 26);
+    _drawText3F(img, size, navy);
 
     File('$out/app_icon.png').writeAsBytesSync(encodePng(img));
     print('✓  app_icon.png');
@@ -30,7 +31,7 @@ void main() {
   {
     final img = Image(width: size, height: size, numChannels: 4);
     fill(img, color: clear);
-    _drawText3F(img, size, limeA);
+    _drawText3F(img, size, navyA);
 
     File('$out/app_icon_fg.png').writeAsBytesSync(encodePng(img));
     print('✓  app_icon_fg.png');

@@ -26,7 +26,15 @@ class MyCoursesScreen extends ConsumerWidget {
     final courses = ref.watch(_myCoursesProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('I miei corsi')),
+      appBar: AppBar(
+        title: const Text('I miei corsi'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.account_circle_outlined),
+            onPressed: () => context.push('/staff/profile'),
+          ),
+        ],
+      ),
       body: courses.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(

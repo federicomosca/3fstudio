@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../features/auth/providers/auth_provider.dart';
@@ -85,7 +86,9 @@ class TrainerScheduleScreen extends ConsumerWidget {
                     final course   = l['courses'] as Map<String, dynamic>;
                     final bookings = l['bookings'] as List? ?? [];
                     final count    = bookings.isNotEmpty
-                        ? (bookings.first['count'] as int? ?? 0)
+                        ? int.tryParse(
+                                bookings.first['count'].toString()) ??
+                            0
                         : 0;
                     final cap  = l['capacity'] as int;
                     final start = DateTime.parse(l['starts_at'] as String).toLocal();
@@ -109,7 +112,8 @@ class TrainerScheduleScreen extends ConsumerWidget {
                         title: Text(course['name'] as String),
                         subtitle: Text('$count/$cap iscritti'),
                         trailing: TextButton(
-                          onPressed: () {},
+                          onPressed: () =>
+                              context.push('/staff/roster/${l['id']}'),
                           child: const Text('Presenze'),
                         ),
                       ),

@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/config/supabase_config.dart';
+import 'core/providers/theme_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 
@@ -31,7 +32,7 @@ class App3FStudio extends ConsumerWidget {
       title: '3FStudio',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.dark,
+      themeMode: ref.watch(themeModeProvider),
       routerConfig: router,
       debugShowCheckedModeBanner: false,
     );

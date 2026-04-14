@@ -66,6 +66,20 @@ class StudioInfoScreen extends ConsumerWidget {
             pinned: true,
             backgroundColor: AppTheme.charcoal,
             foregroundColor: Colors.white,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.account_circle_outlined,
+                    color: Colors.white),
+                onPressed: () {
+                  final loc =
+                      GoRouterState.of(context).matchedLocation;
+                  final profileRoute = loc.startsWith('/client')
+                      ? '/client/profile'
+                      : '/staff/profile';
+                  context.push(profileRoute);
+                },
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               titlePadding:
                   const EdgeInsets.fromLTRB(16, 0, 16, 16),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../features/auth/providers/auth_provider.dart';
@@ -150,7 +151,7 @@ class _MemberTile extends StatelessWidget {
       subtitle: Text(phone != null ? '$roles · $phone' : roles),
       trailing: Icon(Icons.chevron_right,
           color: Theme.of(context).colorScheme.onSurface.withAlpha(100)),
-      onTap: () {},
+      onTap: () => context.push('/u/${member['id']}'),
     );
   }
 }
@@ -194,7 +195,7 @@ class _AddTrainerSheetState extends ConsumerState<_AddTrainerSheet> {
       if (studioId == null) throw Exception('Studio non trovato');
 
       final session = Supabase.instance.client.auth.currentSession;
-      if (session == null) throw Exception('Non autenticato');
+      if (session == null) throw Exception('Sessione scaduta, effettua nuovamente il login');
 
       final response = await Supabase.instance.client.functions.invoke(
         'admin-create-user',
@@ -206,6 +207,7 @@ class _AddTrainerSheetState extends ConsumerState<_AddTrainerSheet> {
           'studio_id': studioId,
           'phone':     _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
         },
+        headers: {'Authorization': 'Bearer ${session.accessToken}'},
       );
 
       if (response.status != 200) {

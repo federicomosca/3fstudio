@@ -230,6 +230,9 @@ class _AddClientSheetState extends ConsumerState<_AddClientSheet> {
       final studioId = ref.read(currentStudioIdProvider);
       if (studioId == null) throw Exception('Studio non trovato');
 
+      final session = Supabase.instance.client.auth.currentSession;
+      if (session == null) throw Exception('Sessione scaduta, effettua nuovamente il login');
+
       final response = await Supabase.instance.client.functions.invoke(
         'admin-create-user',
         body: {
@@ -240,6 +243,7 @@ class _AddClientSheetState extends ConsumerState<_AddClientSheet> {
           'studio_id': studioId,
           'phone':     _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
         },
+        headers: {'Authorization': 'Bearer ${session.accessToken}'},
       );
 
       if (response.status != 200) {

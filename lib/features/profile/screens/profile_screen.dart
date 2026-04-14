@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/providers/studio_provider.dart';
+import '../../../core/providers/theme_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../providers/profile_provider.dart';
@@ -278,6 +279,10 @@ class _ProfileView extends ConsumerWidget {
                 _InfoTile(icon: Icons.phone_outlined, label: 'Telefono', value: profile.phone!),
               const SizedBox(height: 24),
 
+              // Tema
+              _ThemeToggleTile(ref: ref),
+              const SizedBox(height: 8),
+
               // Logout
               ListTile(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -503,6 +508,9 @@ class _ClientProfileScreen extends ConsumerWidget {
               ),
           const SizedBox(height: 24),
 
+          _ThemeToggleTile(ref: ref),
+          const SizedBox(height: 8),
+
           ListTile(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             tileColor: Theme.of(context).colorScheme.errorContainer.withAlpha(80),
@@ -660,6 +668,25 @@ class _InfoTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ThemeToggleTile extends StatelessWidget {
+  final WidgetRef ref;
+  const _ThemeToggleTile({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
+    return SwitchListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      tileColor: Theme.of(context).colorScheme.surface,
+      secondary: Icon(isDark ? Icons.dark_mode_outlined : Icons.light_mode_outlined),
+      title: Text(isDark ? 'Tema scuro' : 'Tema chiaro'),
+      value: isDark,
+      onChanged: (v) => ref.read(themeModeProvider.notifier).state =
+          v ? ThemeMode.dark : ThemeMode.light,
     );
   }
 }

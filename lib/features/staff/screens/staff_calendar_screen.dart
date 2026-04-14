@@ -35,8 +35,8 @@ final _staffLessonsForDayProvider =
     // class_owner: vede solo le lezioni dei propri corsi
     query = query.eq('courses.class_owner_id', user.id);
   } else {
-    // trainer: vede tutte le lezioni dello studio
-    query = query.eq('courses.studio_id', studioId);
+    // trainer puro: vede solo le lezioni in cui è assegnato
+    query = query.eq('trainer_id', user.id);
   }
 
   final data = await query.order('starts_at');
@@ -97,7 +97,15 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
     final theme       = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Calendario')),
+      appBar: AppBar(
+        title: const Text('Calendario'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.account_circle_outlined),
+            onPressed: () => context.push('/staff/profile'),
+          ),
+        ],
+      ),
       floatingActionButton: isClassOwner
           ? FloatingActionButton.extended(
               onPressed: () => _showProposeSheet(context, selectedDay),
@@ -190,7 +198,9 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                         final course  = l['courses'] as Map<String, dynamic>;
                         final bookings = l['bookings'] as List? ?? [];
                         final count   = bookings.isNotEmpty
-                            ? (bookings.first['count'] as int? ?? 0)
+                            ? int.tryParse(
+                                    bookings.first['count'].toString()) ??
+                                0
                             : 0;
                         final cap     = l['capacity'] as int;
                         final start   = DateTime.parse(l['starts_at'] as String).toLocal();
