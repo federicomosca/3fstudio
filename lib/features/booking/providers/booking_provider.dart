@@ -11,7 +11,7 @@ final userBookingsProvider = FutureProvider<Set<String>>((ref) async {
       .from('bookings')
       .select('lesson_id')
       .eq('user_id', user.id)
-      .eq('status', 'booked');
+      .eq('status', 'confirmed');
 
   return (response as List)
       .map<String>((b) => b['lesson_id'] as String)
@@ -27,11 +27,14 @@ class BookingNotifier extends AsyncNotifier<void> {
     if (user == null) throw Exception('Utente non autenticato');
 
     final client = ref.read(supabaseClientProvider);
-    await client.from('bookings').insert({
-      'lesson_id': lessonId,
-      'user_id': user.id,
-      'status': 'booked',
-    });
+    await client.from('bookings').upsert(
+      {
+        'lesson_id': lessonId,
+        'user_id': user.id,
+        'status': 'confirmed',
+      },
+      onConflict: 'user_id,lesson_id',
+    );
 
     ref.invalidate(userBookingsProvider);
   }

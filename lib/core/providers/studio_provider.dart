@@ -40,16 +40,10 @@ final appRolesProvider = FutureProvider<AppRoles>((ref) async {
   return AppRoles(isAdmin: isAdmin, studioId: studioId, studioRoles: roles);
 });
 
-/// Studio corrente:
-/// - Owner: usa lo studio selezionato nel selettore (con fallback)
-/// - Altri: studio di appartenenza
+/// Studio corrente: usa sempre lo studio selezionato nel selettore (con
+/// fallback al primo studio del ruolo).  Funziona per tutti i tipi di utente.
 final currentStudioIdProvider = Provider<String?>((ref) {
-  final roles = ref.watch(appRolesProvider).whenOrNull(data: (r) => r);
-
-  if (roles?.isGymOwner == true) {
-    final selected = ref.watch(selectedStudioProvider).whenOrNull(data: (s) => s);
-    return selected?.id ?? roles?.studioId;
-  }
-
-  return roles?.studioId;
+  final roles    = ref.watch(appRolesProvider).whenOrNull(data: (r) => r);
+  final selected = ref.watch(selectedStudioProvider).whenOrNull(data: (s) => s);
+  return selected?.id ?? roles?.studioId;
 });

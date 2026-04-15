@@ -3,35 +3,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../../core/providers/studio_provider.dart';
+import '../../../core/providers/selected_studio_provider.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../features/profile/screens/profile_screen.dart';
 
-// ── Providers ─────────────────────────────────────────────────────────────────
+// ── Providers (visione globale — non filtrata per sede selezionata) ───────────
 
-final _studioInfoProvider =
-    FutureProvider<Map<String, dynamic>?>((ref) async {
-  final studioId = ref.watch(currentStudioIdProvider);
-  if (studioId == null) return null;
-  final client = ref.watch(supabaseClientProvider);
-  final data   = await client
-      .from('studios')
-      .select('id, name, address, description')
-      .eq('id', studioId)
-      .maybeSingle();
-  return data;
-});
+/// Tutte le sedi accessibili dall'utente corrente
+final _studioSediProvider = userSediProvider;
 
-final _studioTrainersProvider =
+/// Tutti i membri del team su tutte le sedi dell'utente
+final _allTeamProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final studioId = ref.watch(currentStudioIdProvider);
-  if (studioId == null) return [];
-  final client = ref.watch(supabaseClientProvider);
+  final sedi = await ref.watch(userSediProvider.future);
+  if (sedi.isEmpty) return [];
+
+  final client   = ref.watch(supabaseClientProvider);
+  final studioIds = sedi.map((s) => s.id).toList();
 
   final data = await client
       .from('user_studio_roles')
       .select('role, users(id, full_name, bio, avatar_url, specializations)')
-      .eq('studio_id', studioId)
+      .inFilter('studio_id', studioIds)
       .inFilter('role', ['trainer', 'class_owner', 'owner']);
 
   // Deduplica per utente
@@ -47,6 +40,26 @@ final _studioTrainersProvider =
         (a['full_name'] as String).compareTo(b['full_name'] as String));
 });
 
+/// Tutti i corsi su tutte le sedi dell'utente
+final _allCoursesProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final sedi = await ref.watch(userSediProvider.future);
+  if (sedi.isEmpty) return [];
+
+  final client    = ref.watch(supabaseClientProvider);
+  final studioIds = sedi.map((s) => s.id).toList();
+
+  final data = await client
+      .from('courses')
+      .select(
+          'id, name, type, '
+          'users!class_owner_id(id, full_name)')
+      .inFilter('studio_id', studioIds)
+      .order('name');
+
+  return (data as List).cast<Map<String, dynamic>>();
+});
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class StudioInfoScreen extends ConsumerWidget {
@@ -54,8 +67,9 @@ class StudioInfoScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final studioAsync   = ref.watch(_studioInfoProvider);
-    final trainersAsync = ref.watch(_studioTrainersProvider);
+    final sediAsync    = ref.watch(_studioSediProvider);
+    final teamAsync    = ref.watch(_allTeamProvider);
+    final coursesAsync = ref.watch(_allCoursesProvider);
 
     return Scaffold(
       body: CustomScrollView(
@@ -71,33 +85,27 @@ class StudioInfoScreen extends ConsumerWidget {
                 icon: const Icon(Icons.account_circle_outlined,
                     color: Colors.white),
                 onPressed: () {
-                  final loc =
-                      GoRouterState.of(context).matchedLocation;
-                  final profileRoute = loc.startsWith('/client')
+                  final loc = GoRouterState.of(context).matchedLocation;
+                  final route = loc.startsWith('/client')
                       ? '/client/profile'
                       : '/staff/profile';
-                  context.push(profileRoute);
+                  context.push(route);
                 },
               ),
             ],
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding:
-                  const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              title: studioAsync.maybeWhen(
-                data: (s) => Text(
-                  s?['name'] as String? ?? '3F Studio',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                  ),
+            flexibleSpace: const FlexibleSpaceBar(
+              titlePadding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+              title: Text(
+                '3F Training',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
                 ),
-                orElse: () => const Text('Studio',
-                    style: TextStyle(color: Colors.white)),
               ),
-              background: Container(
+              background: ColoredBox(
                 color: AppTheme.charcoal,
-                child: const Align(
+                child: Align(
                   alignment: Alignment(0, 0.3),
                   child: Text(
                     '3F',
@@ -113,67 +121,93 @@ class StudioInfoScreen extends ConsumerWidget {
             ),
           ),
 
-          // ── Content ─────────────────────────────────────────────────────
+          // ── Sedi ────────────────────────────────────────────────────────
           SliverToBoxAdapter(
-            child: studioAsync.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text('Errore: $e',
-                    style: const TextStyle(color: Colors.red)),
-              ),
-              data: (studio) => Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+              child: _SectionTitle('Le nostre sedi'),
+            ),
+          ),
 
-                    // Description
-                    if (studio?['description'] != null &&
-                        (studio!['description'] as String).isNotEmpty) ...[
-                      _SectionTitle('Chi siamo'),
-                      const SizedBox(height: 8),
-                      _Card(
-                        child: Text(
-                          studio['description'] as String,
-                          style: const TextStyle(height: 1.6),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-
-                    // Sedi
-                    _SectionTitle('Le nostre sedi'),
-                    const SizedBox(height: 8),
-                    _InfoRow(
-                      icon: Icons.location_on_outlined,
-                      title: 'Sede principale',
-                      subtitle: 'Via Aquileia, 34 – Palermo',
-                    ),
-                    const SizedBox(height: 8),
-                    _InfoRow(
-                      icon: Icons.location_on_outlined,
-                      title: 'Seconda sede',
-                      subtitle: 'Via Regione Siciliana, 3604 – Palermo',
-                    ),
-
-                    const SizedBox(height: 24),
-                  ],
-                ),
+          sediAsync.when(
+            loading: () => const SliverToBoxAdapter(
+                child: Center(child: CircularProgressIndicator())),
+            error: (e, _) => SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('Errore: $e',
+                      style: const TextStyle(color: Colors.red)),
+                )),
+            data: (sedi) => SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverList.separated(
+                itemCount: sedi.length,
+                separatorBuilder: (context, i) => const SizedBox(height: 8),
+                itemBuilder: (context, i) {
+                  final sede = sedi[i];
+                  return _InfoRow(
+                    icon: Icons.location_on_outlined,
+                    title: sede.name,
+                    subtitle: sede.address ?? '—',
+                  );
+                },
               ),
             ),
+          ),
+
+          // ── Corsi ───────────────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+              child: _SectionTitle('I nostri corsi'),
+            ),
+          ),
+
+          coursesAsync.when(
+            loading: () => const SliverToBoxAdapter(
+                child: Center(child: CircularProgressIndicator())),
+            error: (e, _) => SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('Errore: $e',
+                      style: const TextStyle(color: Colors.red)),
+                )),
+            data: (courses) => courses.isEmpty
+                ? SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      child: Text(
+                        'Nessun corso disponibile',
+                        style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withAlpha(150)),
+                      ),
+                    ),
+                  )
+                : SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverList.separated(
+                      itemCount: courses.length,
+                      separatorBuilder: (context, i) =>
+                          const SizedBox(height: 8),
+                      itemBuilder: (context, i) =>
+                          _CourseTile(course: courses[i]),
+                    ),
+                  ),
           ),
 
           // ── Team ────────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
               child: _SectionTitle('Il nostro team'),
             ),
           ),
 
-          trainersAsync.when(
+          teamAsync.when(
             loading: () => const SliverToBoxAdapter(
                 child: Center(child: CircularProgressIndicator())),
             error: (e, _) => SliverToBoxAdapter(
@@ -183,14 +217,94 @@ class StudioInfoScreen extends ConsumerWidget {
                       style: const TextStyle(color: Colors.red)),
                 )),
             data: (trainers) => SliverPadding(
-              padding:
-                  const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
               sliver: SliverList.separated(
                 itemCount: trainers.length,
-                separatorBuilder: (context, i) =>
-                    const SizedBox(height: 8),
+                separatorBuilder: (context, i) => const SizedBox(height: 8),
                 itemBuilder: (context, i) =>
                     _TrainerTile(trainer: trainers[i]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Course tile ───────────────────────────────────────────────────────────────
+
+class _CourseTile extends StatelessWidget {
+  final Map<String, dynamic> course;
+  const _CourseTile({required this.course});
+
+  @override
+  Widget build(BuildContext context) {
+    final isGroup = course['type'] == 'group';
+    final owner   = course['users'] as Map<String, dynamic>?;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: isGroup
+                  ? AppTheme.blue.withAlpha(30)
+                  : const Color(0xFF9C27B0).withAlpha(30),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isGroup ? Icons.group_outlined : Icons.person_outline,
+              color: isGroup ? AppTheme.blue : const Color(0xFFCE93D8),
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  course['name'] as String,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                if (owner != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    owner['full_name'] as String,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withAlpha(150)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: isGroup
+                  ? AppTheme.blue.withAlpha(20)
+                  : const Color(0xFF9C27B0).withAlpha(20),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              isGroup ? 'Collettivo' : 'Personal',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: isGroup ? AppTheme.blue : const Color(0xFFCE93D8),
               ),
             ),
           ),
@@ -209,10 +323,8 @@ class _TrainerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name  = trainer['full_name'] as String? ?? '—';
-    final bio   = trainer['bio']       as String?;
-    final specs = (trainer['specializations'] as List?)
-            ?.cast<String>() ??
-        [];
+    final bio   = trainer['bio'] as String?;
+    final specs = (trainer['specializations'] as List?)?.cast<String>() ?? [];
 
     return GestureDetector(
       onTap: () => context.push('/u/${trainer['id']}'),
@@ -227,8 +339,8 @@ class _TrainerTile extends StatelessWidget {
           children: [
             UserAvatar(
               avatarUrl: trainer['avatar_url'] as String?,
-              name:      name,
-              radius:    26,
+              name: name,
+              radius: 26,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -244,13 +356,18 @@ class _TrainerTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface.withAlpha(150), fontSize: 12),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withAlpha(150),
+                          fontSize: 12),
                     ),
                   ],
                   if (specs.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Wrap(
-                      spacing: 4, runSpacing: 4,
+                      spacing: 4,
+                      runSpacing: 4,
                       children: specs
                           .take(3)
                           .map((s) => Container(
@@ -260,11 +377,16 @@ class _TrainerTile extends StatelessWidget {
                                   color: AppTheme.lime.withAlpha(40),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
-                                child: Text(s,
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: Theme.of(context).colorScheme.onSurface)),
+                                child: Text(
+                                  s,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface,
+                                  ),
+                                ),
                               ))
                           .toList(),
                     ),
@@ -273,7 +395,8 @@ class _TrainerTile extends StatelessWidget {
               ),
             ),
             Icon(Icons.chevron_right,
-                color: Theme.of(context).colorScheme.onSurface.withAlpha(100),
+                color:
+                    Theme.of(context).colorScheme.onSurface.withAlpha(100),
                 size: 18),
           ],
         ),
@@ -300,23 +423,6 @@ class _SectionTitle extends StatelessWidget {
       );
 }
 
-class _Card extends StatelessWidget {
-  final Widget child;
-  const _Card({required this.child});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Theme.of(context).colorScheme.outline),
-        ),
-        child: child,
-      );
-}
-
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -333,20 +439,30 @@ class _InfoRow extends StatelessWidget {
           border: Border.all(color: Theme.of(context).colorScheme.outline),
         ),
         child: Row(children: [
-          Icon(icon, size: 18,
-              color: Theme.of(context).colorScheme.onSurface.withAlpha(180)),
+          Icon(icon,
+              size: 18,
+              color:
+                  Theme.of(context).colorScheme.onSurface.withAlpha(180)),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  subtitle,
                   style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
-                      fontWeight: FontWeight.w600)),
-              Text(subtitle,
-                  style: const TextStyle(fontWeight: FontWeight.w500)),
-            ],
+                      fontSize: 12,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withAlpha(150)),
+                ),
+              ],
+            ),
           ),
         ]),
       );

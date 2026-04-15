@@ -27,7 +27,7 @@ final _staffLessonsForDayProvider =
   // trainer puro: vede solo le lezioni in cui è assegnato
   var query = client
       .from('lessons')
-      .select('id, starts_at, ends_at, capacity, courses(name, type, class_owner_id), bookings(count)')
+      .select('id, starts_at, ends_at, capacity, status, courses(name, type, class_owner_id), bookings(count)')
       .gte('starts_at', start)
       .lt('starts_at', end);
 
@@ -202,9 +202,10 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                                     bookings.first['count'].toString()) ??
                                 0
                             : 0;
-                        final cap     = l['capacity'] as int;
-                        final start   = DateTime.parse(l['starts_at'] as String).toLocal();
-                        final end     = DateTime.parse(l['ends_at'] as String).toLocal();
+                        final cap       = l['capacity'] as int;
+                        final start     = DateTime.parse(l['starts_at'] as String).toLocal();
+                        final end       = DateTime.parse(l['ends_at'] as String).toLocal();
+                        final isPending = (l['status'] as String?) == 'pending';
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -221,13 +222,36 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                                         color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
                               ],
                             ),
-                            title: Text(course['name'] as String),
-                            subtitle: Text('$count/$cap iscritti'),
-                            trailing: TextButton(
-                              onPressed: () => context.push(
-                                  '/staff/roster/${l['id']}'),
-                              child: const Text('Presenze'),
+                            title: Row(
+                              children: [
+                                Expanded(child: Text(course['name'] as String)),
+                                if (isPending)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 8),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.withAlpha(40),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: const Text(
+                                      'In attesa',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFFFFB74D),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
+                            subtitle: Text('$count/$cap iscritti'),
+                            trailing: isPending
+                                ? null
+                                : TextButton(
+                                    onPressed: () => context.push(
+                                        '/staff/roster/${l['id']}'),
+                                    child: const Text('Presenze'),
+                                  ),
                           ),
                         );
                       },
@@ -276,6 +300,7 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
   final _capCtrl = TextEditingController();
   bool _loading = false;
   String? _error;
+  Set<String> _occupiedRoomIds = {};
 
   @override
   void initState() {
@@ -284,12 +309,31 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
     _startTime = DateTime(d.year, d.month, d.day, 9, 0);
     _endTime = DateTime(d.year, d.month, d.day, 10, 0);
     _capCtrl.text = '10';
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadOccupiedRooms());
   }
 
   @override
   void dispose() {
     _capCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadOccupiedRooms() async {
+    if (!_endTime.isAfter(_startTime)) return;
+    final client = ref.read(supabaseClientProvider);
+    final result = await client
+        .from('lessons')
+        .select('room_id')
+        .not('room_id', 'is', null)
+        .neq('status', 'rejected')
+        .lt('starts_at', _endTime.toUtc().toIso8601String())
+        .gt('ends_at', _startTime.toUtc().toIso8601String());
+    if (!mounted) return;
+    final ids = (result as List).map((r) => r['room_id'] as String).toSet();
+    setState(() {
+      _occupiedRoomIds = ids;
+      if (_roomId != null && ids.contains(_roomId)) _roomId = null;
+    });
   }
 
   Future<void> _pickTime({required bool isStart}) async {
@@ -310,6 +354,7 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
             picked.hour, picked.minute);
       }
     });
+    _loadOccupiedRooms();
   }
 
   Future<void> _submit() async {
@@ -326,16 +371,32 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
       _error = null;
     });
     try {
-      final user = ref.read(currentUserProvider);
-      final client = ref.read(supabaseClientProvider);
+      final user      = ref.read(currentUserProvider);
+      final client    = ref.read(supabaseClientProvider);
+      final startsUtc = _startTime.toUtc().toIso8601String();
+      final endsUtc   = _endTime.toUtc().toIso8601String();
+
+      if (_roomId != null) {
+        final conflicts = await client
+            .from('lessons')
+            .select('id')
+            .eq('room_id', _roomId!)
+            .neq('status', 'rejected')
+            .lt('starts_at', endsUtc)
+            .gt('ends_at', startsUtc);
+        if ((conflicts as List).isNotEmpty) {
+          throw Exception('La sala è già occupata in questo orario');
+        }
+      }
+
       await client.from('lessons').insert({
         'course_id':   _courseId,
-        'trainer_id':  user?.id,      // Il trainer che propone è il responsabile
-        'starts_at':   _startTime.toUtc().toIso8601String(),
-        'ends_at':     _endTime.toUtc().toIso8601String(),
+        'trainer_id':  user?.id,
+        'starts_at':   startsUtc,
+        'ends_at':     endsUtc,
         'capacity':    int.tryParse(_capCtrl.text.trim()) ?? 10,
         if (_roomId != null) 'room_id': _roomId,
-        'status':      'pending',     // Richiede approvazione owner
+        'status':      'pending',
         'proposed_by': user?.id,
       });
 
@@ -435,9 +496,16 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
             rooms.when(
               loading: () => const SizedBox.shrink(),
               error: (e, _) => const SizedBox.shrink(),
-              data: (list) => list.isEmpty
-                  ? const SizedBox.shrink()
-                  : DropdownButtonFormField<String?>(
+              data: (list) {
+                if (list.isEmpty) return const SizedBox.shrink();
+                final available = list
+                    .where((r) => !_occupiedRoomIds.contains(r['id'] as String))
+                    .toList();
+                final allOccupied = available.isEmpty;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<String?>(
                       initialValue: _roomId,
                       decoration: const InputDecoration(
                         labelText: 'Sala (opzionale)',
@@ -446,13 +514,35 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
                       items: [
                         const DropdownMenuItem(
                             value: null, child: Text('— Nessuna —')),
-                        ...list.map((r) => DropdownMenuItem(
+                        ...available.map((r) => DropdownMenuItem(
                               value: r['id'] as String,
                               child: Text(r['name'] as String),
                             )),
                       ],
                       onChanged: (v) => setState(() => _roomId = v),
                     ),
+                    if (allOccupied) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const SizedBox(width: 12),
+                          Icon(Icons.warning_amber_rounded,
+                              size: 14,
+                              color: Theme.of(context).colorScheme.error),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Tutte le sale sono occupate in questo orario',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 12),
 

@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'sede_selector_bar.dart';
+
 /// Shell unificata per class_owner e trainer.
-/// 4 tab per tutti: Calendario | Corsi | Studio | Profilo
-class StaffShell extends StatelessWidget {
+class StaffShell extends ConsumerWidget {
   final Widget child;
   const StaffShell({super.key, required this.child});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final loc = GoRouterState.of(context).matchedLocation;
 
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          const SedeSelectorBar(),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index(loc),
         onDestinationSelected: (i) => _nav(context, i),

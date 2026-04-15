@@ -1,16 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-class ClientShell extends StatelessWidget {
+import 'sede_selector_bar.dart';
+
+class ClientShell extends ConsumerWidget {
   final Widget child;
   const ClientShell({super.key, required this.child});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final loc = GoRouterState.of(context).matchedLocation;
 
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          const SedeSelectorBar(),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index(loc),
         onDestinationSelected: (i) => _nav(context, i),
@@ -35,21 +43,15 @@ class ClientShell extends StatelessWidget {
             selectedIcon: Icon(Icons.home),
             label:        'Studio',
           ),
-          NavigationDestination(
-            icon:         Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label:        'Profilo',
-          ),
         ],
       ),
     );
   }
 
   int _index(String loc) {
-    if (loc.startsWith('/client/courses'))      return 1;
-    if (loc.startsWith('/client/bookings'))     return 2;
-    if (loc.startsWith('/client/studio'))       return 3;
-    if (loc.startsWith('/client/profile'))      return 4;
+    if (loc.startsWith('/client/courses'))  return 1;
+    if (loc.startsWith('/client/bookings')) return 2;
+    if (loc.startsWith('/client/studio'))   return 3;
     return 0; // calendar
   }
 
@@ -59,7 +61,6 @@ class ClientShell extends StatelessWidget {
       case 1: context.go('/client/courses');
       case 2: context.go('/client/bookings');
       case 3: context.go('/client/studio');
-      case 4: context.go('/client/profile');
     }
   }
 }

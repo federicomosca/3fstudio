@@ -284,7 +284,7 @@ class _BookingRow extends StatelessWidget {
     final course   = lesson?['courses'] as Map<String, dynamic>?;
     final name     = course?['name'] as String? ?? '—';
     final startsAt = lesson?['starts_at'] as String?;
-    final status   = booking['status'] as String? ?? 'booked';
+    final status   = booking['status'] as String? ?? 'confirmed';
 
     DateTime? dt;
     if (startsAt != null) dt = DateTime.tryParse(startsAt)?.toLocal();

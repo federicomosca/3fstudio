@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -11,17 +12,19 @@ import '../../../features/profile/providers/profile_provider.dart';
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
-final _myBookingsProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final _myBookingsProvider = FutureProvider<List<Map<String, dynamic>>>((
+  ref,
+) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return [];
 
   final client = ref.watch(supabaseClientProvider);
-  final data   = await client
+  final data = await client
       .from('bookings')
       .select(
-          'id, status, lesson_id, '
-          'lessons(starts_at, ends_at, courses(name, type, cancel_window_hours))')
+        'id, status, lesson_id, '
+        'lessons(starts_at, ends_at, courses(name, type, cancel_window_hours))',
+      )
       .eq('user_id', user.id)
       .limit(50);
 
@@ -30,10 +33,8 @@ final _myBookingsProvider =
       .cast<Map<String, dynamic>>()
       .toList()
     ..sort((a, b) {
-      final da = DateTime.parse(
-          (a['lessons'] as Map)['starts_at'] as String);
-      final db = DateTime.parse(
-          (b['lessons'] as Map)['starts_at'] as String);
+      final da = DateTime.parse((a['lessons'] as Map)['starts_at'] as String);
+      final db = DateTime.parse((b['lessons'] as Map)['starts_at'] as String);
       return db.compareTo(da);
     });
 });
@@ -45,49 +46,79 @@ class MyBookingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bookings   = ref.watch(_myBookingsProvider);
-    final planAsync  = ref.watch(activePlanProvider);
-    final isCredits  = planAsync.whenOrNull(
-          data: (p) => p?.planType == 'credits') ?? false;
+    final bookings = ref.watch(_myBookingsProvider);
+    final planAsync = ref.watch(activePlanProvider);
+    final isCredits =
+        planAsync.whenOrNull(data: (p) => p?.planType == 'credits') ?? false;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Le mie prenotazioni')),
+      appBar: AppBar(
+        title: const Text('Le mie prenotazioni'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.account_circle_outlined),
+            onPressed: () => context.push('/client/profile'),
+          ),
+        ],
+      ),
       body: bookings.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error:   (e, _) => Center(
-            child: Text('Errore: $e',
-                style: const TextStyle(color: Colors.red))),
+        error: (e, _) => Center(
+          child: Text('Errore: $e', style: const TextStyle(color: Colors.red)),
+        ),
         data: (list) {
           if (list.isEmpty) {
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.bookmark_outline,
-                      size: 56,
-                      color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
+                  Icon(
+                    Icons.bookmark_outline,
+                    size: 56,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withAlpha(60),
+                  ),
                   const SizedBox(height: 12),
-                  Text('Nessuna prenotazione',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
+                  Text(
+                    'Nessuna prenotazione',
+                    style: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withAlpha(150),
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text('Vai al calendario per prenotare',
-                      style: TextStyle(
-                          fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
+                  Text(
+                    'Vai al calendario per prenotare',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withAlpha(150),
+                    ),
+                  ),
                 ],
               ),
             );
           }
 
-          final now      = DateTime.now();
+          final now = DateTime.now();
           final upcoming = list
-              .where((b) =>
-                  DateTime.parse((b['lessons'] as Map)['starts_at'] as String)
-                      .isAfter(now) &&
-                  b['status'] == 'booked')
+              .where(
+                (b) =>
+                    DateTime.parse(
+                      (b['lessons'] as Map)['starts_at'] as String,
+                    ).isAfter(now) &&
+                    b['status'] == 'confirmed',
+              )
               .toList();
-          final past = list
-              .where((b) => !upcoming.contains(b))
-              .toList();
+          final past = list.where((b) {
+            if (upcoming.contains(b)) return false;
+            final lessonStart = DateTime.parse(
+                (b['lessons'] as Map)['starts_at'] as String);
+            return lessonStart.isBefore(now);
+          }).toList();
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -95,22 +126,26 @@ class MyBookingsScreen extends ConsumerWidget {
               if (upcoming.isNotEmpty) ...[
                 _SectionHeader(label: 'Prossime (${upcoming.length})'),
                 const SizedBox(height: 8),
-                ...upcoming.map((b) => _BookingCard(
-                      booking: b,
-                      showCancelDeadline: isCredits,
-                      onCancelled: () => ref.invalidate(_myBookingsProvider),
-                    )),
+                ...upcoming.map(
+                  (b) => _BookingCard(
+                    booking: b,
+                    showCancelDeadline: isCredits,
+                    onCancelled: () => ref.invalidate(_myBookingsProvider),
+                  ),
+                ),
                 const SizedBox(height: 20),
               ],
               if (past.isNotEmpty) ...[
                 _SectionHeader(label: 'Storico'),
                 const SizedBox(height: 8),
-                ...past.map((b) => _BookingCard(
-                      booking: b,
-                      muted: true,
-                      showCancelDeadline: false,
-                      onCancelled: () => ref.invalidate(_myBookingsProvider),
-                    )),
+                ...past.map(
+                  (b) => _BookingCard(
+                    booking: b,
+                    muted: true,
+                    showCancelDeadline: false,
+                    onCancelled: () => ref.invalidate(_myBookingsProvider),
+                  ),
+                ),
               ],
             ],
           );
@@ -131,9 +166,9 @@ class _SectionHeader extends StatelessWidget {
     return Text(
       label,
       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
-            fontWeight: FontWeight.bold,
-          ),
+        color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
+        fontWeight: FontWeight.bold,
+      ),
     );
   }
 }
@@ -155,28 +190,41 @@ class _BookingCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lesson  = booking['lessons'] as Map<String, dynamic>;
-    final course  = lesson['courses']  as Map<String, dynamic>;
-    final status  = booking['status']  as String;
+    final lesson = booking['lessons'] as Map<String, dynamic>;
+    final course = lesson['courses'] as Map<String, dynamic>;
+    final status = booking['status'] as String;
     final lessonId = booking['lesson_id'] as String;
-    final start   = DateTime.parse(lesson['starts_at'] as String).toLocal();
-    final end     = DateTime.parse(lesson['ends_at']   as String).toLocal();
+    final start = DateTime.parse(lesson['starts_at'] as String).toLocal();
+    final end = DateTime.parse(lesson['ends_at'] as String).toLocal();
     final cancelHours = course['cancel_window_hours'] as int? ?? 24;
     final dateFmt = DateFormat('EEE d MMM', 'it');
     final timeFmt = DateFormat('HH:mm');
-    final now     = DateTime.now();
+    final now = DateTime.now();
 
-    final deadline  = start.subtract(Duration(hours: cancelHours));
-    final canCancel = status == 'booked' && start.isAfter(now);
+    final deadline = start.subtract(Duration(hours: cancelHours));
+    final canCancel = status == 'confirmed' && start.isAfter(now);
 
     final cs = Theme.of(context).colorScheme;
-    final (Color statusColor, String statusLabel, IconData statusIcon) =
-        switch (status) {
-      'booked'    => (AppTheme.blue,                'Prenotata',  Icons.event_available_outlined),
-      'cancelled' => (cs.onSurface.withAlpha(150),  'Annullata',  Icons.cancel_outlined),
-      'attended'  => (const Color(0xFF66BB6A),      'Presente',   Icons.done_all),
-      'no_show'   => (const Color(0xFFEF5350),      'Assente',    Icons.person_off_outlined),
-      _           => (cs.onSurface.withAlpha(150),  status,       Icons.help_outline),
+    final (
+      Color statusColor,
+      String statusLabel,
+      IconData statusIcon,
+    ) = switch (status) {
+      'confirmed' => muted
+          ? (cs.onSurface.withAlpha(120), 'Non registrata', Icons.help_outline)
+          : (AppTheme.blue, 'Prenotata', Icons.event_available_outlined),
+      'cancelled' => (
+        cs.onSurface.withAlpha(150),
+        'Annullata',
+        Icons.cancel_outlined,
+      ),
+      'attended' => (const Color(0xFF66BB6A), 'Presente', Icons.done_all),
+      'no_show' => (
+        const Color(0xFFEF5350),
+        'Assente',
+        Icons.person_off_outlined,
+      ),
+      _ => (cs.onSurface.withAlpha(150), status, Icons.help_outline),
     };
 
     return Card(
@@ -191,9 +239,12 @@ class _BookingCard extends ConsumerWidget {
               children: [
                 // Barra colorata
                 Container(
-                  width: 4, height: 48,
+                  width: 4,
+                  height: 48,
                   decoration: BoxDecoration(
-                    color: muted ? Theme.of(context).colorScheme.outlineVariant : statusColor,
+                    color: muted
+                        ? Theme.of(context).colorScheme.outlineVariant
+                        : statusColor,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -205,16 +256,23 @@ class _BookingCard extends ConsumerWidget {
                       Text(
                         course['name'] as String,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: muted ? Theme.of(context).colorScheme.onSurface.withAlpha(150) : null,
-                            ),
+                          fontWeight: FontWeight.w600,
+                          color: muted
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withAlpha(150)
+                              : null,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '${dateFmt.format(start)}  '
                         '${timeFmt.format(start)}–${timeFmt.format(end)}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurface.withAlpha(150)),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withAlpha(150),
+                        ),
                       ),
                     ],
                   ),
@@ -225,8 +283,10 @@ class _BookingCard extends ConsumerWidget {
                   children: [
                     Icon(statusIcon, size: 14, color: statusColor),
                     const SizedBox(width: 4),
-                    Text(statusLabel,
-                        style: TextStyle(fontSize: 12, color: statusColor)),
+                    Text(
+                      statusLabel,
+                      style: TextStyle(fontSize: 12, color: statusColor),
+                    ),
                   ],
                 ),
                 // Bottone cancella
@@ -237,7 +297,9 @@ class _BookingCard extends ConsumerWidget {
                     color: Theme.of(context).colorScheme.error,
                     tooltip: 'Cancella',
                     onPressed: () => _cancel(
-                      context, ref, lessonId,
+                      context,
+                      ref,
+                      lessonId,
                       deadline: deadline,
                       isCredits: showCancelDeadline,
                     ),
@@ -287,36 +349,46 @@ class _BookingCard extends ConsumerWidget {
                         color: cs.errorContainer,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(children: [
-                        Icon(Icons.warning_amber_outlined,
-                            size: 16, color: cs.onErrorContainer),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'La finestra gratuita è scaduta.',
-                            style: TextStyle(
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_outlined,
+                            size: 16,
+                            color: cs.onErrorContainer,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'La finestra gratuita è scaduta.',
+                              style: TextStyle(
                                 color: cs.onErrorContainer,
                                 fontWeight: FontWeight.w600,
-                                fontSize: 13),
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
-                        ),
-                      ]),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 12),
-                    const Text('Cancellando ora perderai 1 credito dal tuo piano.\nVuoi procedere?'),
+                    const Text(
+                      'Cancellando ora perderai 1 credito dal tuo piano.\nVuoi procedere?',
+                    ),
                   ],
                 )
               : const Text('Vuoi annullare questa prenotazione?'),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('No')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('No'),
+            ),
             TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: Text(
-                  lateCancel ? 'Sì, perdo il credito' : 'Sì, annulla',
-                  style: TextStyle(color: cs.error),
-                )),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                lateCancel ? 'Sì, perdo il credito' : 'Sì, annulla',
+                style: TextStyle(color: cs.error),
+              ),
+            ),
           ],
         );
       },
@@ -369,7 +441,7 @@ class _CancelDeadlineBadgeState extends State<_CancelDeadlineBadge> {
 
   @override
   Widget build(BuildContext context) {
-    final dateFmt     = DateFormat('EEE d MMM, HH:mm', 'it');
+    final dateFmt = DateFormat('EEE d MMM, HH:mm', 'it');
     final withinWindow = _now.isAfter(widget.deadline);
 
     if (withinWindow) {
@@ -381,42 +453,48 @@ class _CancelDeadlineBadgeState extends State<_CancelDeadlineBadge> {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: cs.error.withAlpha(100)),
         ),
-        child: Row(children: [
-          Icon(Icons.warning_amber_outlined,
-              size: 14, color: cs.onErrorContainer),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              'Finestra di cancellazione chiusa — '
-              'cancellare ora fa perdere il credito',
-              style: TextStyle(
+        child: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_outlined,
+              size: 14,
+              color: cs.onErrorContainer,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Finestra di cancellazione chiusa — '
+                'cancellare ora non farà recuperare il credito',
+                style: TextStyle(
                   color: cs.onErrorContainer,
                   fontSize: 11,
-                  fontWeight: FontWeight.w600),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       );
     }
 
     final remaining = widget.deadline.difference(_now);
-    final hours     = remaining.inHours;
-    final minutes   = remaining.inMinutes % 60;
+    final hours = remaining.inHours;
+    final minutes = remaining.inMinutes % 60;
 
     String timeLabel;
-    Color  color;
-    Color  bg;
-    Color  border;
+    Color color;
+    Color bg;
+    Color border;
 
     if (hours < 2) {
       timeLabel = '${hours}h ${minutes}min';
-      color  = const Color(0xFFFFB74D);
-      bg     = Colors.orange.withAlpha(30);
+      color = const Color(0xFFFFB74D);
+      bg = Colors.orange.withAlpha(30);
       border = Colors.orange.withAlpha(100);
     } else {
       timeLabel = 'entro ${dateFmt.format(widget.deadline)}';
-      color  = Theme.of(context).colorScheme.onSurface;
-      bg     = AppTheme.lime.withAlpha(30);
+      color = Theme.of(context).colorScheme.onSurface;
+      bg = AppTheme.lime.withAlpha(30);
       border = AppTheme.lime.withAlpha(80);
     }
 
@@ -427,17 +505,20 @@ class _CancelDeadlineBadgeState extends State<_CancelDeadlineBadge> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: border),
       ),
-      child: Row(children: [
-        Icon(Icons.timer_outlined, size: 14, color: color),
-        const SizedBox(width: 6),
-        Text(
-          'Puoi cancellare senza perdere crediti: $timeLabel',
-          style: TextStyle(
+      child: Row(
+        children: [
+          Icon(Icons.timer_outlined, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            'Puoi cancellare senza perdere crediti: $timeLabel',
+            style: TextStyle(
               color: color,
               fontSize: 11,
-              fontWeight: FontWeight.w600),
-        ),
-      ]),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

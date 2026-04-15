@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createRemoteJWKSet, jwtVerify } from 'https://esm.sh/jose@5';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,24 +15,28 @@ serve(async (req) => {
 
   try {
     // ── Admin client (service role) ────────────────────────────────────────
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const adminClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
+      supabaseUrl,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
 
-    // ── Verifica che il chiamante sia owner dello studio ───────────────────
+    // ── Verifica JWT con JOSE (supporta ES256 e HS256) ─────────────────────
     const jwt = req.headers.get('authorization')?.replace('Bearer ', '');
     if (!jwt) return errorResponse('Unauthorized', 401);
 
-    const userClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: `Bearer ${jwt}` } } },
-    );
-
-    const { data: { user: caller }, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !caller) return errorResponse('Unauthorized', 401);
+    let callerId: string;
+    try {
+      const JWKS = createRemoteJWKSet(
+        new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`),
+      );
+      const { payload } = await jwtVerify(jwt, JWKS);
+      callerId = payload.sub as string;
+      if (!callerId) throw new Error('sub mancante');
+    } catch {
+      return errorResponse('Unauthorized', 401);
+    }
 
     // ── Leggi parametri ────────────────────────────────────────────────────
     const {
@@ -58,7 +63,7 @@ serve(async (req) => {
     const { data: ownerCheck } = await adminClient
       .from('user_studio_roles')
       .select('role')
-      .eq('user_id', caller.id)
+      .eq('user_id', callerId)
       .eq('studio_id', studio_id)
       .eq('role', 'owner')
       .maybeSingle();
@@ -66,7 +71,7 @@ serve(async (req) => {
     const { data: isAdminRow } = await adminClient
       .from('users')
       .select('is_admin')
-      .eq('id', caller.id)
+      .eq('id', callerId)
       .maybeSingle();
 
     const isAdmin = isAdminRow?.is_admin === true;
@@ -95,7 +100,6 @@ serve(async (req) => {
     });
 
     if (profileErr) {
-      // Rollback auth user
       await adminClient.auth.admin.deleteUser(userId);
       return errorResponse(`Errore profilo: ${profileErr.message}`, 500);
     }
@@ -105,7 +109,6 @@ serve(async (req) => {
       { user_id: userId, studio_id, role },
     ];
 
-    // class_owner ottiene anche il ruolo trainer automaticamente
     if (role === 'class_owner') {
       rolesToInsert.push({ user_id: userId, studio_id, role: 'trainer' });
     }

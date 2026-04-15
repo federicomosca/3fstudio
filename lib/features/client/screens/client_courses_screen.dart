@@ -36,7 +36,7 @@ final _enrolledCourseIdsProvider =
       .from('bookings')
       .select('lessons(course_id, starts_at)')
       .eq('user_id', user.id)
-      .eq('status', 'booked');
+      .eq('status', 'confirmed');
 
   final ids = <String>{};
   for (final b in (data as List)) {
@@ -62,7 +62,15 @@ class ClientCoursesScreen extends ConsumerWidget {
     final enrolledAsync = ref.watch(_enrolledCourseIdsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Corsi')),
+      appBar: AppBar(
+        title: const Text('Corsi'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.account_circle_outlined),
+            onPressed: () => context.push('/client/profile'),
+          ),
+        ],
+      ),
       body: coursesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error:   (e, _) => Center(

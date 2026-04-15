@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/studio.dart';
 import '../../features/auth/providers/auth_provider.dart';
 
-// ── Tutti gli studi di cui l'utente è owner ──────────────────────────────────
+// ── Tutte le sedi accessibili dall'utente (qualunque ruolo) ──────────────────
 
-final ownerStudiosProvider = FutureProvider<List<Studio>>((ref) async {
+final userSediProvider = FutureProvider<List<Studio>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return [];
 
@@ -14,21 +14,28 @@ final ownerStudiosProvider = FutureProvider<List<Studio>>((ref) async {
   final data = await client
       .from('user_studio_roles')
       .select('studios(id, name, address)')
-      .eq('user_id', user.id)
-      .eq('role', 'owner');
+      .eq('user_id', user.id);
 
-  return (data as List)
-      .where((r) => r['studios'] != null)
-      .map((r) => Studio.fromJson(r['studios'] as Map<String, dynamic>))
-      .toList();
+  // Deduplica (un utente può avere più ruoli nella stessa sede)
+  final Map<String, Studio> byId = {};
+  for (final r in (data as List)) {
+    final s = r['studios'] as Map<String, dynamic>?;
+    if (s == null) continue;
+    final studio = Studio.fromJson(s);
+    byId[studio.id] ??= studio;
+  }
+  return byId.values.toList();
 });
+
+/// Alias per retrocompatibilità con owner_shell.dart
+final ownerStudiosProvider = userSediProvider;
 
 // ── Studio selezionato (con memoria del default) ──────────────────────────────
 
 class SelectedStudioNotifier extends AsyncNotifier<Studio?> {
   @override
   Future<Studio?> build() async {
-    final studios = await ref.watch(ownerStudiosProvider.future);
+    final studios = await ref.watch(userSediProvider.future);
     if (studios.isEmpty) return null;
     if (studios.length == 1) return studios.first;
 

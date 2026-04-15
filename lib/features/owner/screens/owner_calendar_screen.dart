@@ -709,6 +709,7 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
   final _capCtrl = TextEditingController();
   bool _loading = false;
   String? _error;
+  Set<String> _occupiedRoomIds = {};
 
   @override
   void initState() {
@@ -717,12 +718,31 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
     _startTime = DateTime(d.year, d.month, d.day, 9, 0);
     _endTime = DateTime(d.year, d.month, d.day, 10, 0);
     _capCtrl.text = '10';
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadOccupiedRooms());
   }
 
   @override
   void dispose() {
     _capCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadOccupiedRooms() async {
+    if (!_endTime.isAfter(_startTime)) return;
+    final client = ref.read(supabaseClientProvider);
+    final result = await client
+        .from('lessons')
+        .select('room_id')
+        .not('room_id', 'is', null)
+        .neq('status', 'rejected')
+        .lt('starts_at', _endTime.toUtc().toIso8601String())
+        .gt('ends_at', _startTime.toUtc().toIso8601String());
+    if (!mounted) return;
+    final ids = (result as List).map((r) => r['room_id'] as String).toSet();
+    setState(() {
+      _occupiedRoomIds = ids;
+      if (_roomId != null && ids.contains(_roomId)) _roomId = null;
+    });
   }
 
   Future<void> _pickTime({required bool isStart}) async {
@@ -748,6 +768,7 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
         );
       }
     });
+    _loadOccupiedRooms();
   }
 
   Future<void> _submit() async {
@@ -766,14 +787,30 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
     setState(() { _loading = true; _error = null; });
     try {
       final client = ref.read(supabaseClientProvider);
+      final startsUtc = _startTime.toUtc().toIso8601String();
+      final endsUtc   = _endTime.toUtc().toIso8601String();
+
+      if (_roomId != null) {
+        final conflicts = await client
+            .from('lessons')
+            .select('id')
+            .eq('room_id', _roomId!)
+            .neq('status', 'rejected')
+            .lt('starts_at', endsUtc)
+            .gt('ends_at', startsUtc);
+        if ((conflicts as List).isNotEmpty) {
+          throw Exception('La sala è già occupata in questo orario');
+        }
+      }
+
       await client.from('lessons').insert({
         'course_id':  _courseId,
         'trainer_id': _trainerId,
-        'starts_at':  _startTime.toUtc().toIso8601String(),
-        'ends_at':    _endTime.toUtc().toIso8601String(),
+        'starts_at':  startsUtc,
+        'ends_at':    endsUtc,
         'capacity':   int.tryParse(_capCtrl.text.trim()) ?? 10,
         if (_roomId != null) 'room_id': _roomId,
-        'status':     'active',   // Owner crea direttamente come attiva
+        'status':     'active',
       });
 
       if (mounted) {
@@ -855,9 +892,16 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
             rooms.when(
               loading: () => const SizedBox.shrink(),
               error: (e, _) => const SizedBox.shrink(),
-              data: (list) => list.isEmpty
-                  ? const SizedBox.shrink()
-                  : DropdownButtonFormField<String?>(
+              data: (list) {
+                if (list.isEmpty) return const SizedBox.shrink();
+                final available = list
+                    .where((r) => !_occupiedRoomIds.contains(r['id'] as String))
+                    .toList();
+                final allOccupied = available.isEmpty;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<String?>(
                       initialValue: _roomId,
                       decoration: const InputDecoration(
                         labelText: 'Sala (opzionale)',
@@ -866,13 +910,35 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
                       items: [
                         const DropdownMenuItem(
                             value: null, child: Text('— Nessuna —')),
-                        ...list.map((r) => DropdownMenuItem(
+                        ...available.map((r) => DropdownMenuItem(
                               value: r['id'] as String,
                               child: Text(r['name'] as String),
                             )),
                       ],
                       onChanged: (v) => setState(() => _roomId = v),
                     ),
+                    if (allOccupied) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const SizedBox(width: 12),
+                          Icon(Icons.warning_amber_rounded,
+                              size: 14,
+                              color: Theme.of(context).colorScheme.error),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Tutte le sale sono occupate in questo orario',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 12),
 

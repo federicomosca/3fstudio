@@ -196,7 +196,7 @@ class _AttendeeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final user   = booking['users'] as Map<String, dynamic>? ?? {};
     final name   = user['full_name'] as String? ?? '—';
-    final status = booking['status'] as String? ?? 'booked';
+    final status = booking['status'] as String? ?? 'confirmed';
 
     return Container(
       decoration: BoxDecoration(
@@ -224,7 +224,7 @@ class _AttendeeRow extends StatelessWidget {
           status: status,
           onPresent:  () => onStatusChange('attended'),
           onAbsent:   () => onStatusChange('no_show'),
-          onReset:    () => onStatusChange('booked'),
+          onReset:    () => onStatusChange('confirmed'),
         ),
       ),
     );
