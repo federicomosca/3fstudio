@@ -47,13 +47,24 @@ final _pendingLessonsCountProvider = FutureProvider<int>((ref) async {
   if (studioId == null) return 0;
   final client = ref.watch(supabaseClientProvider);
 
-  final data = await client
+  // Proposte di lezione in attesa
+  final lessonData = await client
       .from('lessons')
       .select('id, courses!inner(studio_id)')
       .eq('status', 'pending')
       .eq('courses.studio_id', studioId);
+  final lessonCount = (lessonData as List).length;
 
-  return (data as List).length;
+  // Prenotazioni prova in attesa (filtrate per studio via RLS + lesson join)
+  final trialData = await client
+      .from('bookings')
+      .select('id, lessons!inner(courses!inner(studio_id))')
+      .eq('status', 'pending')
+      .eq('is_trial', true)
+      .eq('lessons.courses.studio_id', studioId);
+  final trialCount = (trialData as List).length;
+
+  return lessonCount + trialCount;
 });
 
 // ── Rooms & Courses for creation ──────────────────────────────────────────────
@@ -467,159 +478,87 @@ final _allPendingLessonsProvider =
   return (data as List).cast<Map<String, dynamic>>();
 });
 
+// Prenotazioni prova in attesa per lo studio corrente
+final _allPendingTrialBookingsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final studioId = ref.watch(currentStudioIdProvider);
+  if (studioId == null) return [];
+  final client = ref.watch(supabaseClientProvider);
+
+  final data = await client
+      .from('bookings')
+      .select(
+          'id, lesson_id, '
+          'users(id, full_name), '
+          'lessons!inner(starts_at, ends_at, courses!inner(name, studio_id))')
+      .eq('status', 'pending')
+      .eq('is_trial', true)
+      .eq('lessons.courses.studio_id', studioId)
+      .order('created_at');
+
+  return (data as List).cast<Map<String, dynamic>>();
+});
+
 class PendingLessonsScreen extends ConsumerWidget {
   const PendingLessonsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lessons = ref.watch(_allPendingLessonsProvider);
-    final theme = Theme.of(context);
-    final dateFmt = DateFormat('EEE d MMM, HH:mm', 'it');
+    final trialBookings = ref.watch(_allPendingTrialBookingsProvider);
+    final trialCount = trialBookings.whenOrNull(data: (l) => l.length) ?? 0;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Richieste in attesa')),
-      body: lessons.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-            child: Text('Errore: $e',
-                style: const TextStyle(color: Colors.red))),
-        data: (list) => list.isEmpty
-            ? Center(
-                child: Column(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Richieste in attesa'),
+          bottom: TabBar(
+            tabs: [
+              const Tab(text: 'Proposte lezioni'),
+              Tab(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.pending_actions_outlined,
-                        size: 56,
-                        color: theme.colorScheme.onSurface.withAlpha(60)),
-                    const SizedBox(height: 12),
-                    Text('Nessuna richiesta in attesa',
-                        style: TextStyle(
-                            color:
-                                theme.colorScheme.onSurface.withAlpha(150))),
+                    const Text('Lezioni di prova'),
+                    if (trialCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text('$trialCount',
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                    ],
                   ],
                 ),
-              )
-            : ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: list.length,
-                separatorBuilder: (context, i) =>
-                    const SizedBox(height: 8),
-                itemBuilder: (context, i) {
-                  final l = list[i];
-                  final course = l['courses'] as Map<String, dynamic>;
-                  final proposer = l['users'] as Map<String, dynamic>?;
-                  final start =
-                      DateTime.parse(l['starts_at'] as String).toLocal();
-                  final cap = l['capacity'] as int? ?? 0;
-
-                  return Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: Colors.orange.withAlpha(120)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withAlpha(30),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Text(
-                                'In attesa',
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    color: Color(0xFFFFB74D),
-                                    fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                course['name'] as String,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          dateFmt.format(start),
-                          style: TextStyle(
-                              color: theme.colorScheme.onSurface
-                                  .withAlpha(180)),
-                        ),
-                        Text(
-                          'Capacità: $cap posti',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurface
-                                  .withAlpha(150)),
-                        ),
-                        if (proposer != null)
-                          Text(
-                            'Proposta da: ${proposer['full_name']}',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: theme.colorScheme.onSurface
-                                    .withAlpha(150)),
-                          ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                icon: const Icon(Icons.check,
-                                    size: 16,
-                                    color: Color(0xFF66BB6A)),
-                                label: const Text('Approva',
-                                    style: TextStyle(
-                                        color: Color(0xFF66BB6A))),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(
-                                      color: Color(0xFF66BB6A)),
-                                ),
-                                onPressed: () =>
-                                    _approve(context, ref, l['id'] as String),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                icon: Icon(Icons.close,
-                                    size: 16,
-                                    color: theme.colorScheme.error),
-                                label: Text('Rifiuta',
-                                    style: TextStyle(
-                                        color: theme.colorScheme.error)),
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(
-                                      color: theme.colorScheme.error),
-                                ),
-                                onPressed: () =>
-                                    _reject(context, ref, l['id'] as String),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
               ),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _LessonProposalsTab(
+              onApprove: (ctx, r, id) => _approveLesson(ctx, r, id),
+              onReject: (ctx, r, id) => _rejectLesson(ctx, r, id),
+            ),
+            _TrialBookingsTab(
+              onApprove: (ctx, r, id) => _approveTrial(ctx, r, id),
+              onReject: (ctx, r, id) => _rejectTrial(ctx, r, id),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Future<void> _approve(
+  Future<void> _approveLesson(
       BuildContext context, WidgetRef ref, String lessonId) async {
     final client = ref.read(supabaseClientProvider);
     await client
@@ -638,7 +577,7 @@ class PendingLessonsScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _reject(
+  Future<void> _rejectLesson(
       BuildContext context, WidgetRef ref, String lessonId) async {
     final noteCtrl = TextEditingController();
     final confirm = await showDialog<bool>(
@@ -682,6 +621,281 @@ class PendingLessonsScreen extends ConsumerWidget {
     ref.invalidate(_allPendingLessonsProvider);
     ref.invalidate(_pendingLessonsCountProvider);
   }
+
+  Future<void> _approveTrial(
+      BuildContext context, WidgetRef ref, String bookingId) async {
+    final client = ref.read(supabaseClientProvider);
+    await client
+        .from('bookings')
+        .update({'status': 'confirmed'})
+        .eq('id', bookingId);
+    ref.invalidate(_allPendingTrialBookingsProvider);
+    ref.invalidate(_pendingLessonsCountProvider);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Prenotazione approvata ✓'),
+          backgroundColor: Color(0xFF66BB6A),
+        ),
+      );
+    }
+  }
+
+  Future<void> _rejectTrial(
+      BuildContext context, WidgetRef ref, String bookingId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rifiuta prenotazione prova'),
+        content: const Text(
+            'La richiesta verrà rifiutata. Il cliente non sarà iscritto alla lezione.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annulla')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Rifiuta',
+                  style: TextStyle(
+                      color: Theme.of(ctx).colorScheme.error))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    final client = ref.read(supabaseClientProvider);
+    await client
+        .from('bookings')
+        .update({'status': 'cancelled'})
+        .eq('id', bookingId);
+    ref.invalidate(_allPendingTrialBookingsProvider);
+    ref.invalidate(_pendingLessonsCountProvider);
+  }
+}
+
+// ── Tab: proposte di lezione ──────────────────────────────────────────────────
+
+class _LessonProposalsTab extends ConsumerWidget {
+  final Future<void> Function(BuildContext, WidgetRef, String) onApprove;
+  final Future<void> Function(BuildContext, WidgetRef, String) onReject;
+
+  const _LessonProposalsTab(
+      {required this.onApprove, required this.onReject});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lessons = ref.watch(_allPendingLessonsProvider);
+    final theme = Theme.of(context);
+    final dateFmt = DateFormat('EEE d MMM, HH:mm', 'it');
+
+    return lessons.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+          child: Text('Errore: $e',
+              style: const TextStyle(color: Colors.red))),
+      data: (list) => list.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.pending_actions_outlined,
+                      size: 56,
+                      color: theme.colorScheme.onSurface.withAlpha(60)),
+                  const SizedBox(height: 12),
+                  Text('Nessuna proposta in attesa',
+                      style: TextStyle(
+                          color: theme.colorScheme.onSurface.withAlpha(150))),
+                ],
+              ),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: list.length,
+              separatorBuilder: (context, i) => const SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final l = list[i];
+                final course = l['courses'] as Map<String, dynamic>;
+                final proposer = l['users'] as Map<String, dynamic>?;
+                final start =
+                    DateTime.parse(l['starts_at'] as String).toLocal();
+                final cap = l['capacity'] as int? ?? 0;
+                return _PendingCard(
+                  title: course['name'] as String,
+                  subtitle: dateFmt.format(start),
+                  detail: 'Capacità: $cap posti'
+                      '${proposer != null ? ' · Proposta da: ${proposer['full_name']}' : ''}',
+                  onApprove: () => onApprove(context, ref, l['id'] as String),
+                  onReject: () => onReject(context, ref, l['id'] as String),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ── Tab: prenotazioni prova ───────────────────────────────────────────────────
+
+class _TrialBookingsTab extends ConsumerWidget {
+  final Future<void> Function(BuildContext, WidgetRef, String) onApprove;
+  final Future<void> Function(BuildContext, WidgetRef, String) onReject;
+
+  const _TrialBookingsTab(
+      {required this.onApprove, required this.onReject});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bookings = ref.watch(_allPendingTrialBookingsProvider);
+    final theme = Theme.of(context);
+    final dateFmt = DateFormat('EEE d MMM, HH:mm', 'it');
+
+    return bookings.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+          child: Text('Errore: $e',
+              style: const TextStyle(color: Colors.red))),
+      data: (list) => list.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.fitness_center_outlined,
+                      size: 56,
+                      color: theme.colorScheme.onSurface.withAlpha(60)),
+                  const SizedBox(height: 12),
+                  Text('Nessuna richiesta di prova in attesa',
+                      style: TextStyle(
+                          color: theme.colorScheme.onSurface.withAlpha(150))),
+                ],
+              ),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: list.length,
+              separatorBuilder: (context, i) => const SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final b = list[i];
+                final user = b['users'] as Map<String, dynamic>?;
+                final lesson =
+                    b['lessons'] as Map<String, dynamic>;
+                final course =
+                    lesson['courses'] as Map<String, dynamic>;
+                final start =
+                    DateTime.parse(lesson['starts_at'] as String).toLocal();
+                return _PendingCard(
+                  title: user?['full_name'] as String? ?? 'Cliente',
+                  subtitle: '${course['name']} · ${dateFmt.format(start)}',
+                  detail: 'Lezione di prova',
+                  onApprove: () =>
+                      onApprove(context, ref, b['id'] as String),
+                  onReject: () =>
+                      onReject(context, ref, b['id'] as String),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ── Shared pending card ───────────────────────────────────────────────────────
+
+class _PendingCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String? detail;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  const _PendingCard({
+    required this.title,
+    required this.subtitle,
+    this.detail,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withAlpha(120)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withAlpha(30),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'In attesa',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFFFFB74D),
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(title,
+                    style:
+                        const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(subtitle,
+              style: TextStyle(
+                  color: theme.colorScheme.onSurface.withAlpha(180))),
+          if (detail != null)
+            Text(detail!,
+                style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurface.withAlpha(150))),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.check,
+                      size: 16, color: Color(0xFF66BB6A)),
+                  label: const Text('Approva',
+                      style: TextStyle(color: Color(0xFF66BB6A))),
+                  style: OutlinedButton.styleFrom(
+                    side:
+                        const BorderSide(color: Color(0xFF66BB6A)),
+                  ),
+                  onPressed: onApprove,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: Icon(Icons.close,
+                      size: 16, color: theme.colorScheme.error),
+                  label: Text('Rifiuta',
+                      style:
+                          TextStyle(color: theme.colorScheme.error)),
+                  style: OutlinedButton.styleFrom(
+                    side:
+                        BorderSide(color: theme.colorScheme.error),
+                  ),
+                  onPressed: onReject,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ── Create lesson sheet ───────────────────────────────────────────────────────
@@ -707,6 +921,7 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
   late DateTime _startTime;
   late DateTime _endTime;
   final _capCtrl = TextEditingController();
+  int? _maxCapacity; // capienza massima dello spazio selezionato
   bool _loading = false;
   String? _error;
   Set<String> _occupiedRoomIds = {};
@@ -784,6 +999,11 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
       setState(() => _error = 'L\'orario di fine deve essere dopo l\'inizio');
       return;
     }
+    final capacity = int.tryParse(_capCtrl.text.trim()) ?? 0;
+    if (_maxCapacity != null && capacity > _maxCapacity!) {
+      setState(() => _error = 'I posti non possono superare la capienza dello spazio ($_maxCapacity)');
+      return;
+    }
     setState(() { _loading = true; _error = null; });
     try {
       final client = ref.read(supabaseClientProvider);
@@ -799,7 +1019,7 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
             .lt('starts_at', endsUtc)
             .gt('ends_at', startsUtc);
         if ((conflicts as List).isNotEmpty) {
-          throw Exception('La sala è già occupata in questo orario');
+          throw Exception('Lo spazio è già occupato in questo orario');
         }
       }
 
@@ -888,7 +1108,7 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
             ),
             const SizedBox(height: 12),
 
-            // Sala
+            // Spazio
             rooms.when(
               loading: () => const SizedBox.shrink(),
               error: (e, _) => const SizedBox.shrink(),
@@ -904,18 +1124,30 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
                     DropdownButtonFormField<String?>(
                       initialValue: _roomId,
                       decoration: const InputDecoration(
-                        labelText: 'Sala (opzionale)',
-                        prefixIcon: Icon(Icons.meeting_room_outlined),
+                        labelText: 'Spazio (opzionale)',
+                        prefixIcon: Icon(Icons.place_outlined),
                       ),
                       items: [
                         const DropdownMenuItem(
                             value: null, child: Text('— Nessuna —')),
                         ...available.map((r) => DropdownMenuItem(
                               value: r['id'] as String,
-                              child: Text(r['name'] as String),
+                              child: Text('${r['name']} (max ${r['capacity']})'),
                             )),
                       ],
-                      onChanged: (v) => setState(() => _roomId = v),
+                      onChanged: (v) {
+                        setState(() {
+                          _roomId = v;
+                          if (v != null) {
+                            final room = list.firstWhere((r) => r['id'] == v);
+                            final cap = room['capacity'] as int? ?? 10;
+                            _maxCapacity = cap;
+                            _capCtrl.text = cap.toString();
+                          } else {
+                            _maxCapacity = null;
+                          }
+                        });
+                      },
                     ),
                     if (allOccupied) ...[
                       const SizedBox(height: 4),
@@ -990,9 +1222,16 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
             TextFormField(
               controller: _capCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Posti disponibili',
-                prefixIcon: Icon(Icons.people_outline),
+                prefixIcon: const Icon(Icons.people_outline),
+                helperText: _maxCapacity != null
+                    ? 'Massimo $_maxCapacity (capienza spazio)'
+                    : null,
+                helperStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontSize: 12,
+                ),
               ),
             ),
 

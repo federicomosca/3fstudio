@@ -16,7 +16,7 @@ final lessonsForDayProvider =
 
   final response = await client
       .from('lessons')
-      .select('*, courses!inner(name, type, studio_id)')
+      .select('*, courses!inner(name, type, studio_id, users!class_owner_id(id, full_name))')
       .gte('starts_at', startOfDay.toIso8601String())
       .lt('starts_at', endOfDay.toIso8601String())
       .eq('courses.studio_id', studioId)

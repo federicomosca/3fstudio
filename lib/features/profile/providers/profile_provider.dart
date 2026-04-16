@@ -134,15 +134,16 @@ class MyProfileNotifier extends AsyncNotifier<UserProfile?> {
     });
   }
 
-  /// Carica un'immagine su Supabase Storage e aggiorna avatar_url.
+  /// Carica un'immagine su Supabase Storage e restituisce il public URL.
+  /// Non chiama save() — è compito del chiamante salvare il profilo completo.
   Future<String?> uploadAvatar(File imageFile) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return null;
 
-    final client   = Supabase.instance.client;
-    final ext      = imageFile.path.split('.').last.toLowerCase();
-    final path     = '${user.id}/avatar.$ext';
-    final bytes    = await imageFile.readAsBytes();
+    final client = Supabase.instance.client;
+    final ext    = imageFile.path.split('.').last.toLowerCase();
+    final path   = '${user.id}/avatar.$ext';
+    final bytes  = await imageFile.readAsBytes();
 
     await client.storage.from('avatars').uploadBinary(
       path,
@@ -154,17 +155,8 @@ class MyProfileNotifier extends AsyncNotifier<UserProfile?> {
     );
 
     final url = client.storage.from('avatars').getPublicUrl(path);
-
-    // Aggiunge cache-busting
-    final busted = '$url?t=${DateTime.now().millisecondsSinceEpoch}';
-
-    final current = state.valueOrNull;
-    if (current != null) {
-      final updated = current.copyWith(avatarUrl: busted);
-      await save(updated);
-    }
-
-    return busted;
+    // Cache-busting: forza il reload su CachedNetworkImage
+    return '$url?t=${DateTime.now().millisecondsSinceEpoch}';
   }
 }
 

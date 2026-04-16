@@ -6,6 +6,8 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../features/booking/providers/booking_provider.dart';
+
+import '../../../features/client/widgets/credits_chip.dart';
 import '../providers/lessons_provider.dart';
 import '../widgets/lesson_card.dart';
 
@@ -21,15 +23,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedDay = ref.watch(selectedDayProvider);
-    final lessonDays = ref.watch(lessonDaysProvider(_focusedMonth));
-    final lessons = ref.watch(lessonsForDayProvider(selectedDay));
-    final userBookings = ref.watch(userBookingsProvider);
+    final selectedDay    = ref.watch(selectedDayProvider);
+    final lessonDays     = ref.watch(lessonDaysProvider(_focusedMonth));
+    final lessons        = ref.watch(lessonsForDayProvider(selectedDay));
+    final userBookings   = ref.watch(userBookingsProvider);
+    final enrolledCourses = ref.watch(userEnrolledCourseIdsProvider);
+    final pendingTrials  = ref.watch(userPendingTrialLessonsProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Calendario'),
         actions: [
+          const CreditsChip(),
           IconButton(
             icon: const Icon(Icons.account_circle_outlined),
             onPressed: () => context.push('/client/profile'),
@@ -135,22 +140,28 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   );
                 }
 
-                final bookedIds =
-                    userBookings.whenOrNull(data: (ids) => ids) ?? {};
+                final bookedIds     = userBookings.whenOrNull(data: (ids) => ids) ?? {};
+                final enrolledIds   = enrolledCourses.whenOrNull(data: (ids) => ids) ?? {};
+                final pendingIds    = pendingTrials.whenOrNull(data: (ids) => ids) ?? {};
 
                 return ListView.builder(
                   padding: const EdgeInsets.only(bottom: 16),
                   itemCount: lessonList.length,
                   itemBuilder: (context, index) {
-                    final lesson = lessonList[index];
-                    final isBooked = bookedIds.contains(lesson.id);
+                    final lesson         = lessonList[index];
+                    final isBooked       = bookedIds.contains(lesson.id);
+                    final isEnrolled     = enrolledIds.contains(lesson.courseId);
+                    final isPendingTrial = pendingIds.contains(lesson.id);
 
                     return LessonCard(
                       lesson: lesson,
                       isBooked: isBooked,
-                      bookedCount: 0, // TODO: fetch count per lesson
+                      isEnrolled: isEnrolled,
+                      isPendingTrial: isPendingTrial,
+                      bookedCount: 0,
                       onBook: () => _book(lesson.id),
                       onCancel: () => _cancel(lesson.id),
+                      onBookTrial: () => _bookTrial(lesson.id),
                     );
                   },
                 );
@@ -160,6 +171,25 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _bookTrial(String lessonId) async {
+    try {
+      await ref.read(bookingNotifierProvider.notifier).bookTrialLesson(lessonId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Richiesta inviata — attendi l\'approvazione'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Future<void> _book(String lessonId) async {

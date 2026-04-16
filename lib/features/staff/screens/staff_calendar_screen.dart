@@ -298,6 +298,7 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
   late DateTime _startTime;
   late DateTime _endTime;
   final _capCtrl = TextEditingController();
+  int? _maxCapacity; // capienza massima dello spazio selezionato
   bool _loading = false;
   String? _error;
   Set<String> _occupiedRoomIds = {};
@@ -366,6 +367,11 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
       setState(() => _error = 'L\'orario di fine deve essere dopo l\'inizio');
       return;
     }
+    final capacity = int.tryParse(_capCtrl.text.trim()) ?? 0;
+    if (_maxCapacity != null && capacity > _maxCapacity!) {
+      setState(() => _error = 'I posti non possono superare la capienza dello spazio ($_maxCapacity)');
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
@@ -385,7 +391,7 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
             .lt('starts_at', endsUtc)
             .gt('ends_at', startsUtc);
         if ((conflicts as List).isNotEmpty) {
-          throw Exception('La sala è già occupata in questo orario');
+          throw Exception('Lo spazio è già occupato in questo orario');
         }
       }
 
@@ -492,7 +498,7 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
             ),
             const SizedBox(height: 12),
 
-            // Sala
+            // Spazio
             rooms.when(
               loading: () => const SizedBox.shrink(),
               error: (e, _) => const SizedBox.shrink(),
@@ -508,18 +514,30 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
                     DropdownButtonFormField<String?>(
                       initialValue: _roomId,
                       decoration: const InputDecoration(
-                        labelText: 'Sala (opzionale)',
-                        prefixIcon: Icon(Icons.meeting_room_outlined),
+                        labelText: 'Spazio (opzionale)',
+                        prefixIcon: Icon(Icons.place_outlined),
                       ),
                       items: [
                         const DropdownMenuItem(
                             value: null, child: Text('— Nessuna —')),
                         ...available.map((r) => DropdownMenuItem(
                               value: r['id'] as String,
-                              child: Text(r['name'] as String),
+                              child: Text('${r['name']} (max ${r['capacity']})'),
                             )),
                       ],
-                      onChanged: (v) => setState(() => _roomId = v),
+                      onChanged: (v) {
+                        setState(() {
+                          _roomId = v;
+                          if (v != null) {
+                            final room = list.firstWhere((r) => r['id'] == v);
+                            final cap = room['capacity'] as int? ?? 10;
+                            _maxCapacity = cap;
+                            _capCtrl.text = cap.toString();
+                          } else {
+                            _maxCapacity = null;
+                          }
+                        });
+                      },
                     ),
                     if (allOccupied) ...[
                       const SizedBox(height: 4),
@@ -572,9 +590,16 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
             TextFormField(
               controller: _capCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Posti disponibili',
-                prefixIcon: Icon(Icons.people_outline),
+                prefixIcon: const Icon(Icons.people_outline),
+                helperText: _maxCapacity != null
+                    ? 'Massimo $_maxCapacity (capienza spazio)'
+                    : null,
+                helperStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontSize: 12,
+                ),
               ),
             ),
 

@@ -32,22 +32,25 @@ class UserProfile {
             [],
       );
 
+  // Sentinel per distinguere "non passato" da "passato null" in copyWith
+  static const _absent = Object();
+
   UserProfile copyWith({
-    String?       fullName,
-    String?       phone,
-    String?       bio,
-    String?       avatarUrl,
-    String?       instagramUrl,
+    String?  fullName,
+    Object?  phone         = _absent,
+    Object?  bio           = _absent,
+    Object?  avatarUrl     = _absent,
+    Object?  instagramUrl  = _absent,
     List<String>? specializations,
   }) =>
       UserProfile(
         id:              id,
         fullName:        fullName      ?? this.fullName,
         email:           email,
-        phone:           phone         ?? this.phone,
-        bio:             bio           ?? this.bio,
-        avatarUrl:       avatarUrl     ?? this.avatarUrl,
-        instagramUrl:    instagramUrl  ?? this.instagramUrl,
+        phone:           phone         == _absent ? this.phone         : phone         as String?,
+        bio:             bio           == _absent ? this.bio           : bio           as String?,
+        avatarUrl:       avatarUrl     == _absent ? this.avatarUrl     : avatarUrl     as String?,
+        instagramUrl:    instagramUrl  == _absent ? this.instagramUrl  : instagramUrl  as String?,
         specializations: specializations ?? this.specializations,
       );
 

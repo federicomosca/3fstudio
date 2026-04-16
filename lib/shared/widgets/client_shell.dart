@@ -43,15 +43,21 @@ class ClientShell extends ConsumerWidget {
             selectedIcon: Icon(Icons.home),
             label:        'Studio',
           ),
+          NavigationDestination(
+            icon:         Icon(Icons.notifications_outlined),
+            selectedIcon: Icon(Icons.notifications),
+            label:        'Notifiche',
+          ),
         ],
       ),
     );
   }
 
   int _index(String loc) {
-    if (loc.startsWith('/client/courses'))  return 1;
-    if (loc.startsWith('/client/bookings')) return 2;
-    if (loc.startsWith('/client/studio'))   return 3;
+    if (loc.startsWith('/client/courses'))       return 1;
+    if (loc.startsWith('/client/bookings'))      return 2;
+    if (loc.startsWith('/client/studio'))        return 3;
+    if (loc.startsWith('/client/notifications')) return 4;
     return 0; // calendar
   }
 
@@ -61,6 +67,7 @@ class ClientShell extends ConsumerWidget {
       case 1: context.go('/client/courses');
       case 2: context.go('/client/bookings');
       case 3: context.go('/client/studio');
+      case 4: context.go('/client/notifications');
     }
   }
 }

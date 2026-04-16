@@ -169,16 +169,17 @@ async function main() {
   ]);
   console.log('  Fatto.\n');
 
-  // ── 5. Sale ────────────────────────────────────────────────────────────────
-  console.log('5. Sale...');
-  const [salaGrande, salaPiccola] = await insert('rooms', [
+  // ── 5. Spazi ───────────────────────────────────────────────────────────────
+  console.log('5. Spazi...');
+  const [salaGrande, salaPiccola, spazioOutdoor] = await insert('rooms', [
     { name: 'Sala Grande',   studio_id: sedePrincipale.id, capacity: 15 },
     { name: 'Sala Specchi',  studio_id: sedePrincipale.id, capacity: 8  },
+    { name: 'Outdoor',       studio_id: sedePrincipale.id, capacity: 30 },
   ]);
   const [salaFiliale] = await insert('rooms', [
     { name: 'Sala Unica', studio_id: sedeFiliale.id, capacity: 10 },
   ]);
-  console.log(`  ${salaGrande.name}, ${salaPiccola.name}, ${salaFiliale.name}\n`);
+  console.log(`  ${salaGrande.name}, ${salaPiccola.name}, ${spazioOutdoor.name}, ${salaFiliale.name}\n`);
 
   // ── 6. Corsi ───────────────────────────────────────────────────────────────
   console.log('6. Corsi...');

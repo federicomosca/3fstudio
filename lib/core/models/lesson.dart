@@ -3,6 +3,7 @@ class Lesson {
   final String courseId;
   final String courseName;
   final String courseType; // 'group' | 'personal'
+  final String? trainerName;
   final DateTime startTime;
   final DateTime endTime;
   final int capacity;
@@ -15,18 +16,21 @@ class Lesson {
     required this.startTime,
     required this.endTime,
     required this.capacity,
+    this.trainerName,
   });
 
   factory Lesson.fromJson(Map<String, dynamic> json) {
-    final course = json['courses'] as Map<String, dynamic>;
+    final course  = json['courses'] as Map<String, dynamic>;
+    final trainer = course['users'] as Map<String, dynamic>?;
     return Lesson(
-      id: json['id'] as String,
-      courseId: json['course_id'] as String,
-      courseName: course['name'] as String,
-      courseType: course['type'] as String,
-      startTime: DateTime.parse(json['starts_at'] as String).toLocal(),
-      endTime: DateTime.parse(json['ends_at'] as String).toLocal(),
-      capacity: json['capacity'] as int,
+      id:          json['id'] as String,
+      courseId:    json['course_id'] as String,
+      courseName:  course['name'] as String,
+      courseType:  course['type'] as String,
+      trainerName: trainer?['full_name'] as String?,
+      startTime:   DateTime.parse(json['starts_at'] as String).toLocal(),
+      endTime:     DateTime.parse(json['ends_at'] as String).toLocal(),
+      capacity:    json['capacity'] as int,
     );
   }
 }

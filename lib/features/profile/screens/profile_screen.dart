@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/studio_provider.dart';
 import '../../../core/providers/theme_provider.dart';
@@ -105,25 +106,36 @@ class _StaffProfileScreenState extends ConsumerState<_StaffProfileScreen> {
 
     setState(() => _saving = true);
     try {
-      // Upload avatar se cambiato
+      // Upload avatar se cambiato (restituisce solo l'URL, non salva)
       String? newAvatarUrl = current.avatarUrl;
       if (_pickedImage != null) {
         newAvatarUrl =
             await ref.read(myProfileProvider.notifier).uploadAvatar(_pickedImage!);
       }
 
+      // Costruisce il profilo aggiornato passando esplicitamente tutti i campi,
+      // inclusi quelli che l'utente vuole svuotare (null esplicito).
       final updated = current.copyWith(
-        fullName:       _nameCtrl.text.trim(),
-        phone:          _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-        bio:            _bioCtrl.text.trim().isEmpty ? null : _bioCtrl.text.trim(),
-        instagramUrl:   _instaCtrl.text.trim().isEmpty ? null : _instaCtrl.text.trim(),
+        fullName:        _nameCtrl.text.trim(),
+        phone:           _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+        bio:             _bioCtrl.text.trim().isEmpty   ? null : _bioCtrl.text.trim(),
+        instagramUrl:    _instaCtrl.text.trim().isEmpty ? null : _instaCtrl.text.trim(),
         specializations: _selectedSpecs,
-        avatarUrl:      newAvatarUrl,
+        avatarUrl:       newAvatarUrl,
       );
 
       await ref.read(myProfileProvider.notifier).save(updated);
 
       if (mounted) setState(() => _editing = false);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore nel salvataggio: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -281,7 +293,10 @@ class _ProfileView extends ConsumerWidget {
 
               // Tema
               _ThemeToggleTile(ref: ref),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
+
+              // Impostazioni account
+              const _AccountSettingsSection(),
 
               // Logout
               ListTile(
@@ -509,7 +524,8 @@ class _ClientProfileScreen extends ConsumerWidget {
           const SizedBox(height: 24),
 
           _ThemeToggleTile(ref: ref),
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
+          const _AccountSettingsSection(),
 
           ListTile(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -817,6 +833,270 @@ class _PlanCard extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+// ── Account settings section (condiviso tra staff e client) ───────────────────
+
+/// Sezione "Impostazioni account" con cambio email, password e cancellazione.
+/// Va inserita prima del pulsante Logout in entrambi i profili.
+class _AccountSettingsSection extends ConsumerWidget {
+  const _AccountSettingsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle('Impostazioni account'),
+        const SizedBox(height: 8),
+        _SettingsTile(
+          icon: Icons.email_outlined,
+          label: 'Cambia email',
+          onTap: () => _showChangeEmailDialog(context, ref),
+        ),
+        const SizedBox(height: 6),
+        _SettingsTile(
+          icon: Icons.lock_outline,
+          label: 'Cambia password',
+          onTap: () => _showChangePasswordDialog(context, ref),
+        ),
+        const SizedBox(height: 6),
+        _SettingsTile(
+          icon: Icons.delete_forever_outlined,
+          label: 'Elimina account',
+          color: Theme.of(context).colorScheme.error,
+          onTap: () => _showDeleteAccountDialog(context, ref),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  // ── Cambio email ────────────────────────────────────────────────────────────
+
+  Future<void> _showChangeEmailDialog(
+      BuildContext context, WidgetRef ref) async {
+    final ctrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nuova email'),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.emailAddress,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'nuova@email.com',
+            prefixIcon: Icon(Icons.email_outlined),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annulla')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Continua')),
+        ],
+      ),
+    );
+    if (confirmed != true || ctrl.text.trim().isEmpty) return;
+    if (!context.mounted) return;
+
+    try {
+      final client = ref.read(supabaseClientProvider);
+      await client.auth.updateUser(
+        UserAttributes(email: ctrl.text.trim()),
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Controlla la tua casella email: ti abbiamo inviato un link di conferma'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // ── Cambio password ─────────────────────────────────────────────────────────
+
+  Future<void> _showChangePasswordDialog(
+      BuildContext context, WidgetRef ref) async {
+    final newCtrl     = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    bool  obscureNew     = true;
+    bool  obscureConfirm = true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Text('Nuova password'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: newCtrl,
+                obscureText: obscureNew,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Nuova password',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscureNew
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () => setSt(() => obscureNew = !obscureNew),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmCtrl,
+                obscureText: obscureConfirm,
+                decoration: InputDecoration(
+                  labelText: 'Conferma password',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscureConfirm
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () =>
+                        setSt(() => obscureConfirm = !obscureConfirm),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annulla')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Salva')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+
+    final newPass = newCtrl.text;
+    if (newPass.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('La password deve essere di almeno 8 caratteri'),
+            backgroundColor: Colors.red),
+      );
+      return;
+    }
+    if (newPass != confirmCtrl.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Le password non coincidono'),
+            backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    try {
+      final client = ref.read(supabaseClientProvider);
+      await client.auth.updateUser(UserAttributes(password: newPass));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Password aggiornata ✓'),
+              backgroundColor: Color(0xFF66BB6A)),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // ── Cancellazione account ────────────────────────────────────────────────────
+
+  Future<void> _showDeleteAccountDialog(
+      BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Elimina account'),
+        content: const Text(
+          'Sei sicuro? Questa azione è irreversibile.\n\n'
+          'Tutti i tuoi dati (prenotazioni, piano) saranno eliminati '
+          'definitivamente.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annulla')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Elimina',
+                  style: TextStyle(
+                      color: Theme.of(ctx).colorScheme.error,
+                      fontWeight: FontWeight.bold))),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final client = ref.read(supabaseClientProvider);
+      await client.functions.invoke('delete-account');
+      await ref.read(authNotifierProvider.notifier).signOut();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  final IconData icon;
+  final String   label;
+  final Color?   color;
+  final VoidCallback onTap;
+
+  const _SettingsTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? Theme.of(context).colorScheme.onSurface;
+    return ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      tileColor: Theme.of(context).colorScheme.surface,
+      leading: Icon(icon, color: c),
+      title: Text(label,
+          style: TextStyle(color: c, fontWeight: FontWeight.w500)),
+      trailing: Icon(Icons.chevron_right, color: c.withAlpha(120)),
+      onTap: onTap,
     );
   }
 }

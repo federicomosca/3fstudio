@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
+import '../widgets/credits_chip.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,7 @@ class ClientCoursesScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Corsi'),
         actions: [
+          const CreditsChip(),
           IconButton(
             icon: const Icon(Icons.account_circle_outlined),
             onPressed: () => context.push('/client/profile'),

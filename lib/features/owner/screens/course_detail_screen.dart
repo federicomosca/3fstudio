@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../features/booking/providers/booking_provider.dart';
+import '../../../features/client/widgets/credits_chip.dart';
 import '../../../core/theme/app_theme.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
@@ -111,6 +112,7 @@ class _CourseBody extends ConsumerWidget {
           pinned: true,
           backgroundColor: AppTheme.charcoal,
           foregroundColor: Colors.white,
+          actions: clientMode ? const [CreditsChip()] : null,
           flexibleSpace: FlexibleSpaceBar(
             background: Container(
               color: AppTheme.charcoal,
@@ -160,9 +162,13 @@ class _CourseBody extends ConsumerWidget {
                       label: isGroup ? 'Collettivo' : 'Personal',
                     ),
                     if (owner != null)
-                      _InfoChip(
-                        icon: Icons.manage_accounts_outlined,
-                        label: owner['full_name'] as String,
+                      GestureDetector(
+                        onTap: () => context.push('/u/${owner['id']}'),
+                        child: _InfoChip(
+                          icon: Icons.manage_accounts_outlined,
+                          label: owner['full_name'] as String,
+                          tappable: true,
+                        ),
                       ),
                     if (cancelHours != null)
                       _InfoChip(
@@ -499,27 +505,42 @@ class _SectionTitle extends StatelessWidget {
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
-  const _InfoChip({required this.icon, required this.label});
+  final bool tappable;
+  const _InfoChip({required this.icon, required this.label, this.tappable = false});
 
   @override
   Widget build(BuildContext context) {
+    final iconColor = tappable
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.onSurface.withAlpha(180);
+    final textColor = tappable
+        ? Theme.of(context).colorScheme.primary
+        : null;
+    final borderColor = tappable
+        ? Theme.of(context).colorScheme.primary.withAlpha(120)
+        : Theme.of(context).colorScheme.outline;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Theme.of(context).colorScheme.outline),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon,
-              size: 14,
-              color: Theme.of(context).colorScheme.onSurface.withAlpha(180)),
+          Icon(icon, size: 14, color: iconColor),
           const SizedBox(width: 5),
           Text(label,
-              style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600)),
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: textColor)),
+          if (tappable) ...[
+            const SizedBox(width: 3),
+            Icon(Icons.open_in_new, size: 11, color: iconColor),
+          ],
         ],
       ),
     );

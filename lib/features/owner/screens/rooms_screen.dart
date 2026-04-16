@@ -28,11 +28,11 @@ class RoomsScreen extends ConsumerWidget {
     final rooms = ref.watch(_roomsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Sale')),
+      appBar: AppBar(title: const Text('Spazi')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showRoomSheet(context, ref),
         icon: const Icon(Icons.add),
-        label: const Text('Nuova sala'),
+        label: const Text('Nuovo spazio'),
       ),
       body: rooms.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -75,7 +75,7 @@ class RoomsScreen extends ConsumerWidget {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Elimina sala'),
+        title: const Text('Elimina spazio'),
         content: Text('Sei sicuro di voler eliminare "${room['name']}"?'),
         actions: [
           TextButton(
@@ -96,7 +96,7 @@ class RoomsScreen extends ConsumerWidget {
       ref.invalidate(_roomsProvider);
       if (context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Sala eliminata')));
+            .showSnackBar(const SnackBar(content: Text('Spazio eliminato')));
       }
     } catch (e) {
       if (context.mounted) {
@@ -123,17 +123,17 @@ class _EmptyRooms extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.meeting_room_outlined,
+            Icon(Icons.place_outlined,
                 size: 64,
                 color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
             const SizedBox(height: 16),
-            Text('Nessuna sala',
+            Text('Nessuno spazio',
                 style: Theme.of(context)
                     .textTheme
                     .titleMedium
                     ?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text('Aggiungi la prima sala con il pulsante +',
+            Text('Aggiungi il primo spazio con il pulsante +',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
@@ -141,7 +141,7 @@ class _EmptyRooms extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: onAdd,
               icon: const Icon(Icons.add),
-              label: const Text('Aggiungi sala'),
+              label: const Text('Aggiungi spazio'),
             ),
           ],
         ),
@@ -159,17 +159,28 @@ class _RoomTile extends StatelessWidget {
   const _RoomTile(
       {required this.room, required this.onEdit, required this.onDelete});
 
+  static IconData _iconForRoom(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('outdoor') || lower.contains('esterno') ||
+        lower.contains('giardino') || lower.contains('campo') ||
+        lower.contains('parco')) {
+      return Icons.park_outlined;
+    }
+    return Icons.meeting_room_outlined;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final cap = room['capacity'] as int? ?? 0;
+    final cap  = room['capacity'] as int? ?? 0;
+    final name = room['name'] as String;
     return ListTile(
       shape:
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       tileColor: Theme.of(context).colorScheme.surface,
-      leading: const CircleAvatar(
-        child: Icon(Icons.meeting_room_outlined),
+      leading: CircleAvatar(
+        child: Icon(_iconForRoom(name)),
       ),
-      title: Text(room['name'] as String,
+      title: Text(name,
           style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text('$cap posti'),
       trailing: PopupMenuButton<String>(
@@ -271,7 +282,7 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
         widget.onSaved();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(_isEdit ? 'Sala aggiornata' : 'Sala creata'),
+              content: Text(_isEdit ? 'Spazio aggiornato' : 'Spazio creato'),
               backgroundColor: Colors.green.shade600),
         );
       }
@@ -306,7 +317,7 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
               ),
             ),
             const SizedBox(height: 20),
-            Text(_isEdit ? 'Modifica sala' : 'Nuova sala',
+            Text(_isEdit ? 'Modifica spazio' : 'Nuovo spazio',
                 style: theme.textTheme.titleLarge
                     ?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 24),
@@ -316,8 +327,8 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
               textInputAction: TextInputAction.next,
               textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(
-                labelText: 'Nome sala',
-                prefixIcon: Icon(Icons.meeting_room_outlined),
+                labelText: 'Nome spazio',
+                prefixIcon: Icon(Icons.place_outlined),
               ),
               validator: (v) =>
                   v == null || v.trim().isEmpty ? 'Campo obbligatorio' : null,
@@ -373,7 +384,7 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2))
-                    : Text(_isEdit ? 'Salva modifiche' : 'Crea sala'),
+                    : Text(_isEdit ? 'Salva modifiche' : 'Crea spazio'),
               ),
             ),
           ],

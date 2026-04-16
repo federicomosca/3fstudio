@@ -162,8 +162,8 @@ class OwnerDashboardScreen extends ConsumerWidget {
                 label: 'Corsi',
                 route: '/owner/courses'),
             _MenuItem(
-                icon: Icons.meeting_room_outlined,
-                label: 'Sale',
+                icon: Icons.place_outlined,
+                label: 'Spazi',
                 route: '/owner/rooms'),
             _MenuItem(
                 icon: Icons.group_outlined,
@@ -274,8 +274,8 @@ class _OnboardingCard extends StatelessWidget {
           // Steps
           _OnboardingStep(
             done: status.hasRoom,
-            icon: Icons.meeting_room_outlined,
-            title: 'Aggiungi una sala',
+            icon: Icons.place_outlined,
+            title: 'Aggiungi uno spazio',
             subtitle: 'Le lezioni hanno bisogno di uno spazio',
             route: '/owner/rooms',
             isLast: false,

@@ -39,6 +39,11 @@ class StaffShell extends ConsumerWidget {
             selectedIcon: Icon(Icons.home),
             label:        'Studio',
           ),
+          NavigationDestination(
+            icon:         Icon(Icons.notifications_outlined),
+            selectedIcon: Icon(Icons.notifications),
+            label:        'Notifiche',
+          ),
         ],
       ),
     );
@@ -46,8 +51,9 @@ class StaffShell extends ConsumerWidget {
 
   int _index(String loc) {
     if (loc.startsWith('/staff/courses') ||
-        loc.startsWith('/staff/roster'))  { return 1; }
-    if (loc.startsWith('/staff/studio'))  { return 2; }
+        loc.startsWith('/staff/roster'))        { return 1; }
+    if (loc.startsWith('/staff/studio'))        { return 2; }
+    if (loc.startsWith('/staff/notifications')) { return 3; }
     return 0;
   }
 
@@ -56,6 +62,7 @@ class StaffShell extends ConsumerWidget {
       case 0: context.go('/staff/calendar');
       case 1: context.go('/staff/courses');
       case 2: context.go('/staff/studio');
+      case 3: context.go('/staff/notifications');
     }
   }
 }

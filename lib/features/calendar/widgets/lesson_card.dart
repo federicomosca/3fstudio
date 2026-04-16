@@ -6,17 +6,26 @@ import '../../../core/models/lesson.dart';
 class LessonCard extends StatelessWidget {
   final Lesson lesson;
   final bool isBooked;
+  /// Il client ha almeno una prenotazione confirmed/attended per questo corso.
+  final bool isEnrolled;
+  /// Il client ha già una prenotazione prova in attesa per questa lezione.
+  final bool isPendingTrial;
   final int bookedCount;
   final VoidCallback? onBook;
   final VoidCallback? onCancel;
+  /// Richiedi lezione di prova (solo per corsi a cui non si è iscritti).
+  final VoidCallback? onBookTrial;
 
   const LessonCard({
     super.key,
     required this.lesson,
     required this.isBooked,
     required this.bookedCount,
+    this.isEnrolled = true,
+    this.isPendingTrial = false,
     this.onBook,
     this.onCancel,
+    this.onBookTrial,
   });
 
   @override
@@ -55,7 +64,9 @@ class LessonCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isBooked
                     ? theme.colorScheme.primary
-                    : theme.colorScheme.outline,
+                    : isPendingTrial
+                        ? Colors.orange
+                        : theme.colorScheme.outline,
                 borderRadius: BorderRadius.circular(1),
               ),
             ),
@@ -86,7 +97,19 @@ class LessonCard extends StatelessWidget {
                         style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurface.withAlpha(150)),
                       ),
-                      const SizedBox(width: 12),
+                      if (lesson.trainerName != null) ...[
+                        const SizedBox(width: 10),
+                        Icon(Icons.person_outline,
+                            size: 14,
+                            color: theme.colorScheme.onSurface.withAlpha(150)),
+                        const SizedBox(width: 3),
+                        Text(
+                          lesson.trainerName!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface.withAlpha(150)),
+                        ),
+                      ],
+                      const SizedBox(width: 10),
                       Icon(Icons.people_outline,
                           size: 14,
                           color: theme.colorScheme.onSurface.withAlpha(150)),
@@ -113,6 +136,7 @@ class LessonCard extends StatelessWidget {
   }
 
   Widget _buildButton(BuildContext context, bool isFull) {
+    // Prenotazione confermata → mostra annulla
     if (isBooked) {
       return OutlinedButton(
         onPressed: onCancel,
@@ -125,6 +149,36 @@ class LessonCard extends StatelessWidget {
       );
     }
 
+    // Richiesta prova già inviata → chip arancione
+    if (isPendingTrial) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.orange.withAlpha(25),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.withAlpha(120)),
+        ),
+        child: const Text(
+          'In attesa',
+          style: TextStyle(fontSize: 11, color: Color(0xFFFFB74D)),
+        ),
+      );
+    }
+
+    // Non iscritto al corso → bottone prova
+    if (!isEnrolled) {
+      return OutlinedButton(
+        onPressed: isFull ? null : onBookTrial,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFFFFB74D),
+          side: BorderSide(color: Colors.orange.withAlpha(180)),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        ),
+        child: const Text('Prova', style: TextStyle(fontSize: 12)),
+      );
+    }
+
+    // Iscritto → prenotazione normale
     return ElevatedButton(
       onPressed: isFull ? null : onBook,
       style: ElevatedButton.styleFrom(
