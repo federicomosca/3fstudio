@@ -11,6 +11,22 @@ final userSediProvider = FutureProvider<List<Studio>>((ref) async {
 
   final client = ref.watch(supabaseClientProvider);
 
+  // Gli admin vedono tutte le sedi; gli altri vedono solo quelle con un ruolo.
+  final userRow = await client
+      .from('users')
+      .select('is_admin')
+      .eq('id', user.id)
+      .maybeSingle();
+
+  final isAdmin = (userRow?['is_admin'] as bool?) ?? false;
+
+  if (isAdmin) {
+    final data = await client.from('studios').select('id, name, address');
+    return (data as List)
+        .map((r) => Studio.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
   final data = await client
       .from('user_studio_roles')
       .select('studios(id, name, address)')

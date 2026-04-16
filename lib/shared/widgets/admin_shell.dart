@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'sede_selector_bar.dart';
+
 class AdminShell extends StatelessWidget {
   final Widget child;
   const AdminShell({super.key, required this.child});
@@ -10,7 +12,12 @@ class AdminShell extends StatelessWidget {
     final loc = GoRouterState.of(context).matchedLocation;
 
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          const SedeSelectorBar(),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index(loc),
         onDestinationSelected: (i) => _nav(context, i),
