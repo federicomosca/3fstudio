@@ -964,6 +964,10 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
     final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(isStart ? _startTime : _endTime),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child!,
+      ),
     );
     if (picked == null) return;
     setState(() {
