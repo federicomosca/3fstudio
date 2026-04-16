@@ -1061,7 +1061,9 @@ class _AccountSettingsSection extends ConsumerWidget {
     try {
       final client = ref.read(supabaseClientProvider);
       await client.functions.invoke('delete-account');
-      await ref.read(authNotifierProvider.notifier).signOut();
+      // L'utente è già stato cancellato dal server: usiamo solo il signOut locale
+      // per evitare che il client tenti di invalidare un token già inesistente.
+      await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

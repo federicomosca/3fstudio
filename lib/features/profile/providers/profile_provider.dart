@@ -143,18 +143,23 @@ class MyProfileNotifier extends AsyncNotifier<UserProfile?> {
     final client = Supabase.instance.client;
 
     // Estrae l'estensione in modo robusto; fallback a 'jpg'
-    final rawExt  = imageFile.path.split('.').last.toLowerCase();
-    final ext     = _safeImageExt(rawExt);
-    final mime    = 'image/$ext';
-    // Usa un path fisso per utente: sovrascrittura tramite upsert=true.
-    // Richiede la migration 005 che aggiunge policy UPDATE su storage.objects.
-    final path    = '${user.id}/avatar.$ext';
-    final bytes   = await imageFile.readAsBytes();
+    final rawExt = imageFile.path.split('.').last.toLowerCase();
+    final ext    = _safeImageExt(rawExt);
+    final mime   = 'image/$ext';
+    final path   = '${user.id}/avatar.$ext';
+    final bytes  = await imageFile.readAsBytes();
 
+    // Rimuove il file precedente (best effort) per evitare conflitti.
+    // Se non esiste o la policy manca, l'errore viene ignorato.
+    try {
+      await client.storage.from('avatars').remove([path]);
+    } catch (_) {}
+
+    // Upload senza upsert: richiede solo la policy INSERT (migration 005).
     await client.storage.from('avatars').uploadBinary(
       path,
       bytes,
-      fileOptions: FileOptions(contentType: mime, upsert: true),
+      fileOptions: FileOptions(contentType: mime, upsert: false),
     );
 
     final url = client.storage.from('avatars').getPublicUrl(path);
