@@ -52,13 +52,15 @@ final _staffLessonsForDayProvider =
 
 final _myOwnedCoursesProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final user = ref.watch(currentUserProvider);
-  if (user == null) return [];
+  final user     = ref.watch(currentUserProvider);
+  final studioId = ref.watch(currentStudioIdProvider);
+  if (user == null || studioId == null) return [];
   final client = ref.watch(supabaseClientProvider);
   final data = await client
       .from('courses')
       .select('id, name, type')
       .eq('class_owner_id', user.id)
+      .eq('studio_id', studioId)
       .order('name');
   return (data as List).cast<Map<String, dynamic>>();
 });

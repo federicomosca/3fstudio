@@ -39,22 +39,27 @@ class SelectedStudioNotifier extends AsyncNotifier<Studio?> {
     if (studios.isEmpty) return null;
     if (studios.length == 1) return studios.first;
 
-    // Cerca il default salvato
+    // Cerca il default salvato (colonna aggiunta con migration 005)
     final user   = ref.read(currentUserProvider);
     final client = ref.read(supabaseClientProvider);
     if (user == null) return studios.first;
 
-    final row = await client
-        .from('users')
-        .select('default_studio_id')
-        .eq('id', user.id)
-        .maybeSingle();
+    try {
+      final row = await client
+          .from('users')
+          .select('default_studio_id')
+          .eq('id', user.id)
+          .maybeSingle();
 
-    final defaultId = row?['default_studio_id'] as String?;
-    if (defaultId != null) {
-      try {
-        return studios.firstWhere((s) => s.id == defaultId);
-      } catch (_) {}
+      final defaultId = row?['default_studio_id'] as String?;
+      if (defaultId != null) {
+        try {
+          return studios.firstWhere((s) => s.id == defaultId);
+        } catch (_) {}
+      }
+    } catch (_) {
+      // Colonna default_studio_id non ancora presente nel DB —
+      // prima che venga eseguita la migration 005, cade qui silenziosamente.
     }
     return studios.first;
   }
@@ -70,10 +75,14 @@ class SelectedStudioNotifier extends AsyncNotifier<Studio?> {
     final client = ref.read(supabaseClientProvider);
     if (user == null) return;
 
-    await client
-        .from('users')
-        .update({'default_studio_id': studio.id})
-        .eq('id', user.id);
+    try {
+      await client
+          .from('users')
+          .update({'default_studio_id': studio.id})
+          .eq('id', user.id);
+    } catch (_) {
+      // Colonna default_studio_id non ancora presente — ignorato silenziosamente.
+    }
 
     state = AsyncData(studio);
   }

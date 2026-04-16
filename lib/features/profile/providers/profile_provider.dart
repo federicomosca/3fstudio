@@ -141,22 +141,32 @@ class MyProfileNotifier extends AsyncNotifier<UserProfile?> {
     if (user == null) return null;
 
     final client = Supabase.instance.client;
-    final ext    = imageFile.path.split('.').last.toLowerCase();
-    final path   = '${user.id}/avatar.$ext';
-    final bytes  = await imageFile.readAsBytes();
+
+    // Estrae l'estensione in modo robusto; fallback a 'jpg'
+    final rawExt  = imageFile.path.split('.').last.toLowerCase();
+    final ext     = _safeImageExt(rawExt);
+    final mime    = 'image/$ext';
+    // Usa un path fisso per utente: sovrascrittura tramite upsert=true.
+    // Richiede la migration 005 che aggiunge policy UPDATE su storage.objects.
+    final path    = '${user.id}/avatar.$ext';
+    final bytes   = await imageFile.readAsBytes();
 
     await client.storage.from('avatars').uploadBinary(
       path,
       bytes,
-      fileOptions: FileOptions(
-        contentType: 'image/$ext',
-        upsert: true,
-      ),
+      fileOptions: FileOptions(contentType: mime, upsert: true),
     );
 
     final url = client.storage.from('avatars').getPublicUrl(path);
     // Cache-busting: forza il reload su CachedNetworkImage
     return '$url?t=${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  /// Normalizza l'estensione a un formato MIME valido.
+  static String _safeImageExt(String raw) {
+    const known = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'};
+    if (known.contains(raw)) return raw == 'jpeg' ? 'jpg' : raw;
+    return 'jpg'; // fallback sicuro
   }
 }
 
