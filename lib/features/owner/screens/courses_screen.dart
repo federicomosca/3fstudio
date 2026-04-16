@@ -326,7 +326,9 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
                 ),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return null;
-                  if (int.tryParse(v.trim()) == null) return 'Inserisci un numero';
+                  final n = int.tryParse(v.trim());
+                  if (n == null) return 'Inserisci un numero';
+                  if (n < 0) return 'Il valore deve essere ≥ 0';
                   return null;
                 },
               ),
