@@ -1,12 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
+import '../providers/plan_requests_provider.dart';
 
-// ── Provider ──────────────────────────────────────────────────────────────────
+// ── Providers ─────────────────────────────────────────────────────────────────
+
+final _pendingRequestsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final studioId = ref.watch(currentStudioIdProvider);
+  if (studioId == null) return [];
+  final client = ref.watch(supabaseClientProvider);
+  final data = await client
+      .from('plan_requests')
+      .select(
+          'id, user_id, plan_id, created_at, '
+          'users(full_name, email), '
+          'plans(name, type, credits, duration_days, price)')
+      .eq('studio_id', studioId)
+      .eq('status', 'pending')
+      .order('created_at');
+  return (data as List).cast<Map<String, dynamic>>();
+});
 
 final _plansProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final studioId = ref.watch(currentStudioIdProvider);
@@ -27,8 +46,9 @@ class PlansScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final plans = ref.watch(_plansProvider);
-    final cs = Theme.of(context).colorScheme;
+    final plans    = ref.watch(_plansProvider);
+    final requests = ref.watch(_pendingRequestsProvider);
+    final cs       = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Piani & abbonamenti')),
@@ -42,20 +62,178 @@ class PlansScreen extends ConsumerWidget {
         error: (e, _) => Center(
           child: Text('Errore: $e', style: TextStyle(color: cs.error)),
         ),
-        data: (list) => list.isEmpty
-            ? _emptyState(cs)
-            : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                itemCount: list.length,
-                separatorBuilder: (context, i) => const SizedBox(height: 10),
-                itemBuilder: (context, i) => _PlanCard(
-                  plan: list[i],
-                  onEdit:   () => _openSheet(context, ref, existing: list[i]),
-                  onDelete: () => _confirmDelete(context, ref, list[i]),
-                ),
-              ),
+        data: (list) => ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          children: [
+            // ── Richieste in attesa ────────────────────────────────────────
+            requests.whenOrNull(
+              data: (reqs) => reqs.isNotEmpty
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SectionLabel('Richieste in attesa'),
+                        const SizedBox(height: 8),
+                        ...reqs.map((r) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _RequestCard(
+                                request: r,
+                                onApprove: () =>
+                                    _approveRequest(context, ref, r),
+                                onReject: () =>
+                                    _rejectRequest(context, ref, r),
+                              ),
+                            )),
+                        const SizedBox(height: 12),
+                        Divider(color: cs.outline),
+                        const SizedBox(height: 12),
+                      ],
+                    )
+                  : null,
+            ) ?? const SizedBox.shrink(),
+
+            // ── Lista piani ───────────────────────────────────────────────
+            if (list.isEmpty)
+              _emptyState(cs)
+            else ...[
+              _SectionLabel('Piani disponibili'),
+              const SizedBox(height: 8),
+              ...list.asMap().entries.map((e) => Padding(
+                    padding: EdgeInsets.only(
+                        bottom: e.key < list.length - 1 ? 10 : 0),
+                    child: _PlanCard(
+                      plan: e.value,
+                      onEdit: () =>
+                          _openSheet(context, ref, existing: e.value),
+                      onDelete: () =>
+                          _confirmDelete(context, ref, e.value),
+                    ),
+                  )),
+            ],
+          ],
+        ),
       ),
     );
+  }
+
+  // ── Approvazione richiesta ─────────────────────────────────────────────────
+
+  Future<void> _approveRequest(BuildContext context, WidgetRef ref,
+      Map<String, dynamic> request) async {
+    final plan      = request['plans'] as Map<String, dynamic>? ?? {};
+    final user      = request['users'] as Map<String, dynamic>? ?? {};
+    final planName  = plan['name'] as String? ?? '—';
+    final userName  = user['full_name'] as String? ?? '—';
+    final planType  = plan['type'] as String? ?? 'credits';
+    final credits   = plan['credits'] as int?;
+    final duration  = plan['duration_days'] as int?;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Attiva piano'),
+        content: Text(
+          'Attivare "$planName" per $userName?\n\n'
+          'Assicurati di aver ricevuto il pagamento prima di procedere.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Attiva'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final db       = ref.read(supabaseClientProvider);
+      final userId   = request['user_id'] as String;
+      final planId   = request['plan_id'] as String;
+      final now      = DateTime.now().toUtc();
+      final expiresAt = duration != null
+          ? now.add(Duration(days: duration)).toIso8601String()
+          : null;
+      final creditsRemaining = planType == 'credits' ? credits : null;
+
+      await db.from('user_plans').insert({
+        'user_id':           userId,
+        'plan_id':           planId,
+        'credits_remaining': creditsRemaining,
+        'expires_at':        expiresAt,
+      });
+      await db.from('plan_requests').update({
+        'status':      'approved',
+        'reviewed_at': now.toIso8601String(),
+      }).eq('id', request['id']);
+
+      ref.invalidate(_pendingRequestsProvider);
+      ref.invalidate(pendingPlanRequestsCountProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Piano "$planName" attivato per $userName')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Errore: $e')));
+      }
+    }
+  }
+
+  Future<void> _rejectRequest(BuildContext context, WidgetRef ref,
+      Map<String, dynamic> request) async {
+    final plan     = request['plans'] as Map<String, dynamic>? ?? {};
+    final user     = request['users'] as Map<String, dynamic>? ?? {};
+    final planName = plan['name'] as String? ?? '—';
+    final userName = user['full_name'] as String? ?? '—';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rifiuta richiesta'),
+        content: Text('Rifiutare la richiesta di "$planName" per $userName?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+                foregroundColor: Theme.of(ctx).colorScheme.error),
+            child: const Text('Rifiuta'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final db  = ref.read(supabaseClientProvider);
+      final now = DateTime.now().toUtc().toIso8601String();
+      await db.from('plan_requests').update({
+        'status':      'rejected',
+        'reviewed_at': now,
+      }).eq('id', request['id']);
+
+      ref.invalidate(_pendingRequestsProvider);
+      ref.invalidate(pendingPlanRequestsCountProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Richiesta rifiutata')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Errore: $e')));
+      }
+    }
   }
 
   Widget _emptyState(ColorScheme cs) => Center(
@@ -130,6 +308,109 @@ class PlansScreen extends ConsumerWidget {
         );
       }
     }
+  }
+}
+
+// ── Section label ─────────────────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) => Text(
+        text,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+          color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
+          letterSpacing: 0.5,
+        ),
+      );
+}
+
+// ── Request card ──────────────────────────────────────────────────────────────
+
+class _RequestCard extends StatelessWidget {
+  final Map<String, dynamic> request;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+  const _RequestCard({
+    required this.request,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs       = Theme.of(context).colorScheme;
+    final plan     = request['plans'] as Map<String, dynamic>? ?? {};
+    final user     = request['users'] as Map<String, dynamic>? ?? {};
+    final planName = plan['name'] as String? ?? '—';
+    final userName = user['full_name'] as String? ?? '—';
+    final price    = (plan['price'] as num?)?.toDouble() ?? 0;
+    final createdAt = request['created_at'] as String?;
+    DateTime? created;
+    if (createdAt != null) created = DateTime.tryParse(createdAt)?.toLocal();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.blue.withAlpha(15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.blue.withAlpha(80)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.hourglass_empty, color: AppTheme.blue, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  userName,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (created != null)
+                Text(
+                  DateFormat('d MMM', 'it_IT').format(created),
+                  style: TextStyle(
+                      fontSize: 12, color: cs.onSurface.withAlpha(150)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$planName — €${price.toStringAsFixed(0)}',
+            style: TextStyle(fontSize: 13, color: cs.onSurface.withAlpha(180)),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onReject,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: cs.error,
+                    side: BorderSide(color: cs.error.withAlpha(120)),
+                  ),
+                  child: const Text('Rifiuta'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: onApprove,
+                  child: const Text('Attiva'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 

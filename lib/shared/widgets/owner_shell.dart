@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/owner/providers/plan_requests_provider.dart';
 import 'sede_selector_bar.dart';
 
 class OwnerShell extends ConsumerWidget {
@@ -23,38 +24,38 @@ class OwnerShell extends ConsumerWidget {
         selectedIndex: _index(loc),
         onDestinationSelected: (i) => _nav(context, i),
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.calendar_month_outlined),
             selectedIcon: Icon(Icons.calendar_month),
             label: 'Calendario',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.fitness_center_outlined),
             selectedIcon: Icon(Icons.fitness_center),
             label: 'Corsi',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.group_outlined),
             selectedIcon: Icon(Icons.group),
             label: 'Team',
           ),
           NavigationDestination(
-            icon: Icon(Icons.card_membership_outlined),
-            selectedIcon: Icon(Icons.card_membership),
+            icon: _PlansBadge(selected: false),
+            selectedIcon: _PlansBadge(selected: true),
             label: 'Piani',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.people_outline),
             selectedIcon: Icon(Icons.people),
             label: 'Clienti',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),
             selectedIcon: Icon(Icons.bar_chart),
             label: 'Report',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.notifications_outlined),
             selectedIcon: Icon(Icons.notifications),
             label: 'Notifiche',
@@ -85,5 +86,30 @@ class OwnerShell extends ConsumerWidget {
       case 5: context.go('/owner/report');
       case 6: context.go('/owner/notifications');
     }
+  }
+}
+
+// Badge sulla voce "Piani" che mostra il numero di richieste in attesa.
+class _PlansBadge extends ConsumerWidget {
+  final bool selected;
+  const _PlansBadge({required this.selected});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(pendingPlanRequestsCountProvider).whenOrNull(
+              data: (n) => n,
+            ) ??
+        0;
+
+    final icon = Icon(
+      selected ? Icons.card_membership : Icons.card_membership_outlined,
+    );
+
+    if (count == 0) return icon;
+
+    return Badge(
+      label: Text('$count'),
+      child: icon,
+    );
   }
 }

@@ -11,7 +11,11 @@
       "Bash(dart pub:*)",
       "Bash(dart run:*)",
       "Bash(flutter devices:*)",
-      "Bash(flutter run:*)"
+      "Bash(flutter run:*)",
+      "Bash(find *)",
+      "Bash(xargs grep *)",
+      "Bash(grep -v \"tool\\\\\\\\\")",
+      "Bash(grep -v \"^\\\\s*$\")"
     ]
   }
 }

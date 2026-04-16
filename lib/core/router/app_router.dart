@@ -31,6 +31,7 @@ import '../../features/staff/screens/roster_screen.dart';
 import '../../features/client/screens/client_calendar_screen.dart';
 import '../../features/client/screens/my_bookings_screen.dart';
 import '../../features/client/screens/client_courses_screen.dart';
+import '../../features/client/screens/client_plans_screen.dart';
 
 // Shared
 import '../../features/profile/screens/profile_screen.dart';
@@ -196,6 +197,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                     courseId: state.pathParameters['courseId']!)),
           GoRoute(path: '/client/bookings',
               builder: (ctx, state) => const MyBookingsScreen()),
+          GoRoute(path: '/client/plans',
+              builder: (ctx, state) => const ClientPlansScreen()),
           GoRoute(path: '/client/studio',
               builder: (ctx, state) => const StudioInfoScreen()),
           GoRoute(path: '/client/notifications',
