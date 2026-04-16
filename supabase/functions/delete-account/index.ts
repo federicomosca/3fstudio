@@ -46,15 +46,23 @@ serve(async (req) => {
       userId = user.id;
     }
 
-    // ── Elimina i dati utente (cascade tramite FK) ──────────────────────────
-    // Le FK con ON DELETE CASCADE gestiscono bookings, user_plans, user_studio_roles
-    // Eliminiamo prima l'avatar da Storage (best effort)
+    // ── 1. Avatar da Storage (best effort) ──────────────────────────────────
     try {
       await adminClient.storage.from('avatars').remove([`${userId}/avatar`]);
     } catch (_) { /* ignora se non esiste */ }
 
-    // ── Elimina l'utente da auth (rimuove anche il record in public.users
-    //    se c'è un trigger ON DELETE CASCADE) ───────────────────────────────
+    // ── 2. Elimina il profilo da public.users ────────────────────────────────
+    // Questo rimuove in cascade bookings, user_plans, user_studio_roles (FK CASCADE).
+    // Va fatto prima di deleteUser perché public.users referenzia auth.users;
+    // senza questa delete esplicita il db solleva FK violation se CASCADE non è
+    // configurato sulla colonna id di public.users.
+    const { error: profileError } = await adminClient
+      .from('users')
+      .delete()
+      .eq('id', userId);
+    if (profileError) throw profileError;
+
+    // ── 3. Elimina l'utente da auth ──────────────────────────────────────────
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
     if (deleteError) throw deleteError;
 

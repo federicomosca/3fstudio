@@ -15,7 +15,8 @@
       "Bash(find *)",
       "Bash(xargs grep *)",
       "Bash(grep -v \"tool\\\\\\\\\")",
-      "Bash(grep -v \"^\\\\s*$\")"
+      "Bash(grep -v \"^\\\\s*$\")",
+      "WebFetch(domain:api.github.com)"
     ]
   }
 }

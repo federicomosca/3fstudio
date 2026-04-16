@@ -36,6 +36,11 @@ class OwnerShell extends ConsumerWidget {
             label: 'Corsi',
           ),
           const NavigationDestination(
+            icon: Icon(Icons.meeting_room_outlined),
+            selectedIcon: Icon(Icons.meeting_room),
+            label: 'Spazi',
+          ),
+          const NavigationDestination(
             icon: Icon(Icons.group_outlined),
             selectedIcon: Icon(Icons.group),
             label: 'Team',
@@ -51,9 +56,9 @@ class OwnerShell extends ConsumerWidget {
             label: 'Clienti',
           ),
           const NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: 'Report',
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Studio',
           ),
           const NavigationDestination(
             icon: Icon(Icons.notifications_outlined),
@@ -67,12 +72,13 @@ class OwnerShell extends ConsumerWidget {
 
   int _index(String loc) {
     if (loc.startsWith('/owner/calendar') || loc.startsWith('/owner/requests')) return 0;
-    if (loc.startsWith('/owner/courses') || loc.startsWith('/owner/rooms'))     return 1;
-    if (loc.startsWith('/owner/team'))                                           return 2;
-    if (loc.startsWith('/owner/plans'))                                          return 3;
-    if (loc.startsWith('/owner/clients'))                                        return 4;
-    if (loc.startsWith('/owner/report'))                                         return 5;
-    if (loc.startsWith('/owner/notifications') || loc.startsWith('/owner/profile')) return 6;
+    if (loc.startsWith('/owner/courses'))                                        return 1;
+    if (loc.startsWith('/owner/rooms'))                                          return 2;
+    if (loc.startsWith('/owner/team'))                                           return 3;
+    if (loc.startsWith('/owner/plans'))                                          return 4;
+    if (loc.startsWith('/owner/clients'))                                        return 5;
+    if (loc.startsWith('/owner/studio'))                                         return 6;
+    if (loc.startsWith('/owner/notifications') || loc.startsWith('/owner/profile')) return 7;
     return 0;
   }
 
@@ -80,11 +86,12 @@ class OwnerShell extends ConsumerWidget {
     switch (i) {
       case 0: context.go('/owner/calendar');
       case 1: context.go('/owner/courses');
-      case 2: context.go('/owner/team');
-      case 3: context.go('/owner/plans');
-      case 4: context.go('/owner/clients');
-      case 5: context.go('/owner/report');
-      case 6: context.go('/owner/notifications');
+      case 2: context.go('/owner/rooms');
+      case 3: context.go('/owner/team');
+      case 4: context.go('/owner/plans');
+      case 5: context.go('/owner/clients');
+      case 6: context.go('/owner/studio');
+      case 7: context.go('/owner/notifications');
     }
   }
 }

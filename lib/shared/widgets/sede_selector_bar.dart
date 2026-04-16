@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/studio.dart';
 import '../../core/providers/selected_studio_provider.dart';
+import '../../core/providers/studio_provider.dart';
+import '../../features/auth/providers/auth_provider.dart'
+    show currentUserProvider, supabaseClientProvider;
 
 /// Barra superiore per selezionare la sede attiva.
 /// Mostrata in tutti i shell (owner, staff, client).
@@ -18,18 +21,22 @@ class SedeSelectorBar extends ConsumerWidget {
     final sediAsync     = ref.watch(userSediProvider);
     final selectedAsync = ref.watch(selectedStudioProvider);
     final theme         = Theme.of(context);
+    final roles         = ref.watch(appRolesProvider).whenOrNull(data: (r) => r);
+    final canAddSede    = (roles?.isAdmin ?? false) || (roles?.isGymOwner ?? false);
 
     final sedi     = sediAsync.whenOrNull(data: (s) => s) ?? [];
     final selected = selectedAsync.whenOrNull(data: (s) => s);
+
+    final hasMultiple = sedi.length > 1;
 
     return Material(
       color: theme.colorScheme.primary,
       child: SafeArea(
         bottom: false,
         child: InkWell(
-          onTap: sedi.length <= 1
+          onTap: sedi.isEmpty
               ? null
-              : () => _showPicker(context, ref, sedi, selected),
+              : () => _showPicker(context, ref, sedi, selected, canAddSede),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
@@ -68,8 +75,12 @@ class SedeSelectorBar extends ConsumerWidget {
                     ),
                   ),
                 ),
-                if (sedi.length > 1)
-                  const Icon(Icons.expand_more, color: Colors.white, size: 20),
+                if (sedi.isNotEmpty)
+                  Icon(
+                    hasMultiple ? Icons.expand_more : Icons.keyboard_arrow_down,
+                    color: Colors.white.withAlpha(hasMultiple ? 255 : 120),
+                    size: 20,
+                  ),
                 if (profileRoute != null) ...[
                   const SizedBox(width: 8),
                   GestureDetector(
@@ -94,6 +105,7 @@ class SedeSelectorBar extends ConsumerWidget {
     WidgetRef ref,
     List<Studio> sedi,
     Studio? current,
+    bool canAddSede,
   ) {
     showModalBottomSheet(
       context: context,
@@ -103,6 +115,7 @@ class SedeSelectorBar extends ConsumerWidget {
       builder: (ctx) => _SedePickerSheet(
         sedi: sedi,
         current: current,
+        canAddSede: canAddSede,
         onSelect: (s) {
           ref.read(selectedStudioProvider.notifier).select(s);
           Navigator.pop(ctx);
@@ -111,6 +124,122 @@ class SedeSelectorBar extends ConsumerWidget {
           await ref.read(selectedStudioProvider.notifier).setDefault(s);
           if (ctx.mounted) Navigator.pop(ctx);
         },
+        onAddSede: canAddSede
+            ? () {
+                Navigator.pop(ctx);
+                _showAddSedeDialog(context, ref);
+              }
+            : null,
+      ),
+    );
+  }
+
+  void _showAddSedeDialog(BuildContext context, WidgetRef ref) {
+    final nameCtrl    = TextEditingController();
+    final addressCtrl = TextEditingController();
+    final formKey     = GlobalKey<FormState>();
+    var   saving      = false;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Nuova sede'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome sede *',
+                    prefixIcon: Icon(Icons.store),
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Campo obbligatorio' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: addressCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Indirizzo',
+                    prefixIcon: Icon(Icons.location_on_outlined),
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text('Annulla'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      setState(() => saving = true);
+
+                      try {
+                        final client = ref.read(supabaseClientProvider);
+                        final user   = ref.read(currentUserProvider);
+
+                        final address = addressCtrl.text.trim();
+                        final row = await client
+                            .from('studios')
+                            .insert({
+                              'name': nameCtrl.text.trim(),
+                              if (address.isNotEmpty) 'address': address,
+                            })
+                            .select('id, name, address')
+                            .single();
+
+                        if (user != null) {
+                          await client.from('user_studio_roles').insert({
+                            'user_id':   user.id,
+                            'studio_id': row['id'],
+                            'role':      'owner',
+                          });
+                        }
+
+                        ref.invalidate(userSediProvider);
+                        ref.invalidate(selectedStudioProvider);
+
+                        if (ctx.mounted) Navigator.pop(ctx);
+
+                        // Aspetta che il provider si aggiorni, poi seleziona la nuova sede
+                        final newStudios =
+                            await ref.read(userSediProvider.future);
+                        final newStudio = newStudios.firstWhere(
+                          (s) => s.id == (row['id'] as String),
+                          orElse: () => newStudios.last,
+                        );
+                        ref
+                            .read(selectedStudioProvider.notifier)
+                            .select(newStudio);
+                      } catch (e) {
+                        setState(() => saving = false);
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text('Errore: $e')),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Crea'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -121,14 +250,18 @@ class SedeSelectorBar extends ConsumerWidget {
 class _SedePickerSheet extends ConsumerWidget {
   final List<Studio> sedi;
   final Studio? current;
+  final bool canAddSede;
   final void Function(Studio) onSelect;
   final Future<void> Function(Studio) onSetDefault;
+  final VoidCallback? onAddSede;
 
   const _SedePickerSheet({
     required this.sedi,
     required this.current,
+    required this.canAddSede,
     required this.onSelect,
     required this.onSetDefault,
+    this.onAddSede,
   });
 
   @override
@@ -203,6 +336,20 @@ class _SedePickerSheet extends ConsumerWidget {
             onTap: () => onSelect(sede),
           );
         }),
+        if (canAddSede) ...[
+          const Divider(height: 1),
+          ListTile(
+            leading: CircleAvatar(
+              backgroundColor: theme.colorScheme.secondaryContainer,
+              child: Icon(Icons.add, color: theme.colorScheme.secondary, size: 20),
+            ),
+            title: Text(
+              'Nuova sede',
+              style: TextStyle(color: theme.colorScheme.secondary),
+            ),
+            onTap: onAddSede,
+          ),
+        ],
         const SizedBox(height: 16),
       ],
     );

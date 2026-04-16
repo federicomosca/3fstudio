@@ -40,6 +40,24 @@ final _allTeamProvider =
         (a['full_name'] as String).compareTo(b['full_name'] as String));
 });
 
+/// Tutte le sale su tutte le sedi dell'utente
+final _allRoomsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final sedi = await ref.watch(userSediProvider.future);
+  if (sedi.isEmpty) return [];
+
+  final client    = ref.watch(supabaseClientProvider);
+  final studioIds = sedi.map((s) => s.id).toList();
+
+  final data = await client
+      .from('rooms')
+      .select('id, name, capacity, studio_id')
+      .inFilter('studio_id', studioIds)
+      .order('name');
+
+  return (data as List).cast<Map<String, dynamic>>();
+});
+
 /// Tutti i corsi su tutte le sedi dell'utente
 final _allCoursesProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
@@ -68,6 +86,7 @@ class StudioInfoScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sediAsync    = ref.watch(_studioSediProvider);
+    final roomsAsync   = ref.watch(_allRoomsProvider);
     final teamAsync    = ref.watch(_allTeamProvider);
     final coursesAsync = ref.watch(_allCoursesProvider);
 
@@ -86,9 +105,14 @@ class StudioInfoScreen extends ConsumerWidget {
                     color: Colors.white),
                 onPressed: () {
                   final loc = GoRouterState.of(context).matchedLocation;
-                  final route = loc.startsWith('/client')
-                      ? '/client/profile'
-                      : '/staff/profile';
+                  final String route;
+                  if (loc.startsWith('/client')) {
+                    route = '/client/profile';
+                  } else if (loc.startsWith('/owner')) {
+                    route = '/owner/profile';
+                  } else {
+                    route = '/staff/profile';
+                  }
                   context.push(route);
                 },
               ),
@@ -153,6 +177,49 @@ class StudioInfoScreen extends ConsumerWidget {
                 },
               ),
             ),
+          ),
+
+          // ── Sale ────────────────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+              child: _SectionTitle('Le nostre sale'),
+            ),
+          ),
+
+          roomsAsync.when(
+            loading: () => const SliverToBoxAdapter(
+                child: Center(child: CircularProgressIndicator())),
+            error: (e, _) => SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('Errore: $e',
+                      style: const TextStyle(color: Colors.red)),
+                )),
+            data: (rooms) => rooms.isEmpty
+                ? SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      child: Text(
+                        'Nessuna sala disponibile',
+                        style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withAlpha(150)),
+                      ),
+                    ),
+                  )
+                : SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverList.separated(
+                      itemCount: rooms.length,
+                      separatorBuilder: (context, i) =>
+                          const SizedBox(height: 8),
+                      itemBuilder: (context, i) => _RoomTile(room: rooms[i]),
+                    ),
+                  ),
           ),
 
           // ── Corsi ───────────────────────────────────────────────────────
@@ -226,6 +293,74 @@ class StudioInfoScreen extends ConsumerWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Room tile ─────────────────────────────────────────────────────────────────
+
+class _RoomTile extends StatelessWidget {
+  final Map<String, dynamic> room;
+  const _RoomTile({required this.room});
+
+  @override
+  Widget build(BuildContext context) {
+    final capacity = room['capacity'] as int?;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppTheme.cyan.withAlpha(30),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              Icons.meeting_room_outlined,
+              color: AppTheme.cyan,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              room['name'] as String,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          if (capacity != null)
+            Row(
+              children: [
+                Icon(Icons.people_outline,
+                    size: 14,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withAlpha(150)),
+                const SizedBox(width: 4),
+                Text(
+                  '$capacity',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withAlpha(150),
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );

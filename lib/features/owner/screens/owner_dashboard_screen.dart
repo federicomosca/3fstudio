@@ -177,10 +177,6 @@ class OwnerDashboardScreen extends ConsumerWidget {
                 icon: Icons.card_membership_outlined,
                 label: 'Piani',
                 route: '/owner/plans'),
-            _MenuItem(
-                icon: Icons.bar_chart_outlined,
-                label: 'Report',
-                route: '/owner/report'),
           ]),
         ],
       ),

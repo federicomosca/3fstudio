@@ -39,7 +39,7 @@ DO $$ BEGIN
   ALTER TABLE user_studio_roles
     ADD CONSTRAINT user_studio_roles_user_studio_role_key
     UNIQUE (user_id, studio_id, role);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 
 -- 5. class_owner_id e cancel_window_hours su courses
 ALTER TABLE courses
