@@ -10,8 +10,14 @@ import '../../../core/providers/studio_provider.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
+class _OwnerSelectedDayNotifier extends Notifier<DateTime> {
+  @override
+  DateTime build() => DateTime.now();
+  void set(DateTime day) => state = day;
+}
+
 final _ownerSelectedDayProvider =
-    StateProvider<DateTime>((ref) => DateTime.now());
+    NotifierProvider<_OwnerSelectedDayNotifier, DateTime>(_OwnerSelectedDayNotifier.new);
 
 final _ownerLessonsForDayProvider =
     FutureProvider.family<List<Map<String, dynamic>>, DateTime>(
@@ -105,7 +111,7 @@ final _ownerTrainersProvider =
       .from('user_studio_roles')
       .select('users(id, full_name)')
       .eq('studio_id', studioId)
-      .inFilter('role', ['trainer', 'class_owner', 'owner']);
+      .inFilter('role', ['trainer', 'owner']);
 
   final Map<String, Map<String, dynamic>> byUser = {};
   for (final row in (data as List)) {
@@ -213,9 +219,9 @@ class OwnerCalendarScreen extends ConsumerWidget {
               weekendTextStyle: TextStyle(color: Color(0xFFAAAAAA)),
             ),
             onDaySelected: (selected, _) =>
-                ref.read(_ownerSelectedDayProvider.notifier).state = selected,
+                ref.read(_ownerSelectedDayProvider.notifier).set(selected),
             onPageChanged: (focused) {
-              ref.read(_ownerSelectedDayProvider.notifier).state = focused;
+              ref.read(_ownerSelectedDayProvider.notifier).set(focused);
             },
           ),
           const Divider(height: 1),
@@ -350,10 +356,34 @@ class OwnerCalendarScreen extends ConsumerWidget {
                                       ),
                                     ],
                                   )
-                                : TextButton(
-                                    onPressed: () => context.push(
-                                        '/owner/roster/${l['id']}'),
-                                    child: const Text('Presenze'),
+                                : PopupMenuButton<String>(
+                                    onSelected: (v) {
+                                      if (v == 'presenze') {
+                                        context.push('/owner/roster/${l['id']}');
+                                      } else if (v == 'delete') {
+                                        _deleteLesson(context, ref, l);
+                                      }
+                                    },
+                                    itemBuilder: (_) => [
+                                      const PopupMenuItem(
+                                        value: 'presenze',
+                                        child: ListTile(
+                                          leading: Icon(Icons.how_to_reg_outlined),
+                                          title: Text('Presenze'),
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                      const PopupMenuItem(
+                                        value: 'delete',
+                                        child: ListTile(
+                                          leading: Icon(Icons.delete_outline,
+                                              color: Colors.red),
+                                          title: Text('Elimina',
+                                              style: TextStyle(color: Colors.red)),
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                           ),
                         );
@@ -435,6 +465,61 @@ class OwnerCalendarScreen extends ConsumerWidget {
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
+    }
+  }
+
+  Future<void> _deleteLesson(
+      BuildContext context, WidgetRef ref, Map<String, dynamic> lesson) async {
+    final client   = ref.read(supabaseClientProvider);
+    final lessonId = lesson['id'] as String;
+
+    final bookingCount = await client
+        .from('bookings')
+        .select('id')
+        .eq('lesson_id', lessonId)
+        .count();
+    final count = bookingCount.count;
+
+    if (!context.mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Elimina lezione'),
+        content: Text(
+          count > 0
+              ? 'Ci sono $count prenotazioni per questa lezione. '
+                'Eliminando la lezione verranno cancellate anche le prenotazioni. Continuare?'
+              : 'Sei sicuro di voler eliminare questa lezione?',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annulla')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Elimina',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      if (count > 0) {
+        await client.from('bookings').delete().eq('lesson_id', lessonId);
+      }
+      await client.from('lessons').delete().eq('id', lessonId);
+      ref.invalidate(_ownerLessonsForDayProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Lezione eliminata')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Errore: $e'), backgroundColor: Colors.red));
+      }
     }
   }
 

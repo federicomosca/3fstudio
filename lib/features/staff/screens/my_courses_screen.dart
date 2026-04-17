@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/course_type.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../shared/widgets/coming_soon.dart';
@@ -51,7 +52,7 @@ class MyCoursesScreen extends ConsumerWidget {
                 separatorBuilder: (context, i) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final c       = list[i];
-                  final isGroup = c['type'] == 'group';
+                  final courseType = c['type'] as String? ?? 'group';
                   final window  = c['cancel_window_hours'] as int? ?? 24;
 
                   return ListTile(
@@ -59,17 +60,17 @@ class MyCoursesScreen extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(12)),
                     tileColor: Theme.of(context).colorScheme.surface,
                     leading: CircleAvatar(
-                      backgroundColor: isGroup
-                          ? AppTheme.blue.withAlpha(30)
-                          : const Color(0xFF9C27B0).withAlpha(30),
+                      backgroundColor: courseType == 'personal'
+                          ? const Color(0xFF9C27B0).withAlpha(30)
+                          : AppTheme.blue.withAlpha(30),
                       child: Icon(
-                        isGroup ? Icons.group_outlined : Icons.person_outline,
-                        color: isGroup ? AppTheme.blue : const Color(0xFFCE93D8),
+                        courseTypeIcon(courseType),
+                        color: courseType == 'personal' ? const Color(0xFFCE93D8) : AppTheme.blue,
                       ),
                     ),
                     title: Text(c['name'] as String),
                     subtitle: Text(
-                        '${isGroup ? 'Collettivo' : 'Personal'} · cancella entro ${window}h'),
+                        '${courseTypeLabel(courseType)} · cancella entro ${window}h'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push('/staff/courses/${c['id']}'),
                   );

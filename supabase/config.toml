@@ -1,0 +1,10 @@
+project_id = "qndkjgagyupogaibozbw"
+
+[functions.admin-create-user]
+verify_jwt = false
+
+[functions.create-studio]
+verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = false

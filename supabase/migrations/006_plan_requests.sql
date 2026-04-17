@@ -24,7 +24,7 @@ create policy "read_plan_requests"
       select 1 from public.user_studio_roles usr
       where usr.user_id   = auth.uid()
         and usr.studio_id = plan_requests.studio_id
-        and usr.role in ('gym_owner', 'admin')
+        and usr.role in ('owner', 'admin')
     )
   );
 
@@ -43,6 +43,6 @@ create policy "update_plan_request"
       select 1 from public.user_studio_roles usr
       where usr.user_id   = auth.uid()
         and usr.studio_id = plan_requests.studio_id
-        and usr.role in ('gym_owner', 'admin')
+        and usr.role in ('owner', 'admin')
     )
   );

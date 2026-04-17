@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'sede_selector_bar.dart';
 
-/// Shell unificata per class_owner e trainer.
+/// Shell per trainer (e course owner — determinato da class_owner_id sul corso).
 class StaffShell extends ConsumerWidget {
   final Widget child;
   const StaffShell({super.key, required this.child});

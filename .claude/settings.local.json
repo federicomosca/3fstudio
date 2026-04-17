@@ -16,7 +16,15 @@
       "Bash(xargs grep *)",
       "Bash(grep -v \"tool\\\\\\\\\")",
       "Bash(grep -v \"^\\\\s*$\")",
-      "WebFetch(domain:api.github.com)"
+      "WebFetch(domain:api.github.com)",
+      "Bash(supabase projects *)",
+      "Bash(npx supabase *)",
+      "Bash(./gradlew --stop)",
+      "Bash(supabase functions *)",
+      "Bash(curl *)",
+      "Bash(gh issue *)",
+      "Bash(class_owner)",
+      "Bash(courses.class_owner_id)"
     ]
   }
 }

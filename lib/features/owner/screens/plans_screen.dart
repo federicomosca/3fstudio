@@ -42,7 +42,8 @@ final _plansProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class PlansScreen extends ConsumerWidget {
-  const PlansScreen({super.key});
+  final bool hideAppBar;
+  const PlansScreen({super.key, this.hideAppBar = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -51,7 +52,7 @@ class PlansScreen extends ConsumerWidget {
     final cs       = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Piani & abbonamenti')),
+      appBar: hideAppBar ? null : AppBar(title: const Text('Piani & abbonamenti')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openSheet(context, ref),
         icon: const Icon(Icons.add),

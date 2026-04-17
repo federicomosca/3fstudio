@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/course_type.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
@@ -143,7 +144,7 @@ class _CourseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isGroup = course['type'] == 'group';
+    final courseType = course['type'] as String? ?? 'group';
     final owner   = course['users'] as Map<String, dynamic>?;
     final desc    = course['description'] as String?;
 
@@ -170,16 +171,16 @@ class _CourseCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: enrolled
                     ? AppTheme.navy
-                    : (isGroup
-                        ? AppTheme.blue.withAlpha(30)
-                        : const Color(0xFF9C27B0).withAlpha(30)),
+                    : (courseType == 'personal'
+                        ? const Color(0xFF9C27B0).withAlpha(30)
+                        : AppTheme.blue.withAlpha(30)),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                isGroup ? Icons.group_outlined : Icons.person_outline,
+                courseTypeIcon(courseType),
                 color: enrolled
                     ? AppTheme.blue
-                    : (isGroup ? AppTheme.blue : const Color(0xFFCE93D8)),
+                    : (courseType == 'personal' ? const Color(0xFFCE93D8) : AppTheme.blue),
                 size: 22,
               ),
             ),

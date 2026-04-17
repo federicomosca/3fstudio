@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/models/course_type.dart';
 import '../../../core/models/lesson.dart';
 
 class LessonCard extends StatelessWidget {
@@ -85,15 +86,13 @@ class LessonCard extends StatelessWidget {
                   Row(
                     children: [
                       Icon(
-                        lesson.courseType == 'group'
-                            ? Icons.group_outlined
-                            : Icons.person_outline,
+                        courseTypeIcon(lesson.courseType),
                         size: 14,
                         color: theme.colorScheme.onSurface.withAlpha(150),
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        lesson.courseType == 'group' ? 'Collettivo' : 'Personal',
+                        courseTypeLabel(lesson.courseType),
                         style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurface.withAlpha(150)),
                       ),

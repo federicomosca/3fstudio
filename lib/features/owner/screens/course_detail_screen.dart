@@ -4,8 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../features/auth/providers/auth_provider.dart';
+import 'courses_screen.dart';
+import '../../../core/models/course_type.dart';
 import '../../../features/booking/providers/booking_provider.dart';
 import '../../../features/client/widgets/credits_chip.dart';
+import '../../../core/providers/studio_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
@@ -35,6 +38,26 @@ final _courseLessonsProvider =
       .order('starts_at')
       .limit(20);
   return (data as List).cast<Map<String, dynamic>>();
+});
+
+final _staffForCourseProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final studioId = ref.watch(currentStudioIdProvider);
+  if (studioId == null) return [];
+  final client = ref.watch(supabaseClientProvider);
+  final data = await client
+      .from('user_studio_roles')
+      .select('users(id, full_name)')
+      .eq('studio_id', studioId)
+      .eq('role', 'trainer');
+  final Map<String, Map<String, dynamic>> byUser = {};
+  for (final row in (data as List)) {
+    final user = row['users'] as Map<String, dynamic>;
+    byUser[user['id'] as String] ??= user;
+  }
+  return byUser.values.toList()
+    ..sort((a, b) =>
+        (a['full_name'] as String).compareTo(b['full_name'] as String));
 });
 
 /// Lesson ID delle lezioni di questo corso già prenotate dall'utente corrente.
@@ -83,10 +106,73 @@ class _CourseBody extends ConsumerWidget {
   final Map<String, dynamic> course;
   const _CourseBody({required this.courseId, required this.course});
 
+  Future<void> _confirmDelete(
+    BuildContext context,
+    WidgetRef ref,
+    String courseId,
+    Map<String, dynamic> course,
+  ) async {
+    final name = course['name'] as String;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Elimina corso'),
+        content: Text(
+          'Eliminare "$name"?\n\n'
+          'Verranno eliminate tutte le lezioni e prenotazioni associate.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Elimina'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final client = ref.read(supabaseClientProvider);
+
+      final lessonRows = await client
+          .from('lessons')
+          .select('id')
+          .eq('course_id', courseId);
+      final lessonIds =
+          (lessonRows as List).map((r) => r['id'] as String).toList();
+
+      if (lessonIds.isNotEmpty) {
+        await client.from('bookings').delete().inFilter('lesson_id', lessonIds);
+        await client.from('waitlist').delete().inFilter('lesson_id', lessonIds);
+        await client.from('lessons').delete().eq('course_id', courseId);
+      }
+      await client.from('courses').delete().eq('id', courseId);
+
+      ref.invalidate(coursesProvider);
+      if (context.mounted) {
+        context.pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"$name" eliminato')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lessonsAsync  = ref.watch(_courseLessonsProvider(courseId));
-    final isGroup       = course['type'] == 'group';
+    final courseType    = course['type'] as String? ?? 'group';
     final owner         = course['users'] as Map<String, dynamic>?;
     final desc          = course['description'] as String?;
     final cancelHours   = course['cancel_window_hours'] as int?;
@@ -104,6 +190,10 @@ class _CourseBody extends ConsumerWidget {
       ref.invalidate(_myCourseLessonBookingsProvider(courseId));
     }
 
+    void onCourseEdited() {
+      ref.invalidate(_courseDetailProvider(courseId));
+    }
+
     return CustomScrollView(
       slivers: [
         // ── AppBar ────────────────────────────────────────────────────────
@@ -112,7 +202,50 @@ class _CourseBody extends ConsumerWidget {
           pinned: true,
           backgroundColor: AppTheme.charcoal,
           foregroundColor: Colors.white,
-          actions: clientMode ? const [CreditsChip()] : null,
+          actions: clientMode
+              ? const [CreditsChip()]
+              : [
+                  PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'edit') {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          useSafeArea: true,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.vertical(top: Radius.circular(20)),
+                          ),
+                          builder: (_) => _EditCourseSheet(
+                            courseId: courseId,
+                            course: course,
+                            onSaved: onCourseEdited,
+                          ),
+                        );
+                      } else if (v == 'delete') {
+                        _confirmDelete(context, ref, courseId, course);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(children: [
+                          Icon(Icons.edit_outlined, size: 18),
+                          SizedBox(width: 10),
+                          Text('Modifica'),
+                        ]),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(children: [
+                          Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                          SizedBox(width: 10),
+                          Text('Elimina', style: TextStyle(color: Colors.red)),
+                        ]),
+                      ),
+                    ],
+                  ),
+                ],
           flexibleSpace: FlexibleSpaceBar(
             background: Container(
               color: AppTheme.charcoal,
@@ -124,9 +257,9 @@ class _CourseBody extends ConsumerWidget {
                     CircleAvatar(
                       radius: 30,
                       backgroundColor:
-                          isGroup ? Colors.blue.shade400 : Colors.purple.shade400,
+                          courseType == 'personal' ? Colors.purple.shade400 : Colors.blue.shade400,
                       child: Icon(
-                        isGroup ? Icons.group_outlined : Icons.person_outline,
+                        courseTypeIcon(courseType),
                         color: Colors.white,
                         size: 28,
                       ),
@@ -158,8 +291,8 @@ class _CourseBody extends ConsumerWidget {
                   spacing: 8, runSpacing: 8,
                   children: [
                     _InfoChip(
-                      icon: isGroup ? Icons.group_outlined : Icons.person_outline,
-                      label: isGroup ? 'Collettivo' : 'Personal',
+                      icon: courseTypeIcon(courseType),
+                      label: courseTypeLabel(courseType),
                     ),
                     if (owner != null)
                       GestureDetector(
@@ -241,6 +374,212 @@ class _CourseBody extends ConsumerWidget {
                 ),
         ),
       ],
+    );
+  }
+}
+
+// ── Edit course sheet ─────────────────────────────────────────────────────────
+
+class _EditCourseSheet extends ConsumerStatefulWidget {
+  final String courseId;
+  final Map<String, dynamic> course;
+  final VoidCallback onSaved;
+  const _EditCourseSheet({
+    required this.courseId,
+    required this.course,
+    required this.onSaved,
+  });
+
+  @override
+  ConsumerState<_EditCourseSheet> createState() => _EditCourseSheetState();
+}
+
+class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
+  final _formKey   = GlobalKey<FormState>();
+  late final _nameCtrl  = TextEditingController(
+      text: widget.course['name'] as String? ?? '');
+  late final _descCtrl  = TextEditingController(
+      text: widget.course['description'] as String? ?? '');
+  late final _hoursCtrl = TextEditingController(
+      text: (widget.course['cancel_window_hours'] as int? ?? 2).toString());
+
+  late String? _ownerId =
+      (widget.course['users'] as Map<String, dynamic>?)?['id'] as String?;
+  bool    _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _descCtrl.dispose();
+    _hoursCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() { _loading = true; _error = null; });
+    try {
+      final client = ref.read(supabaseClientProvider);
+      await client.from('courses').update({
+        'name':                _nameCtrl.text.trim(),
+        'description':
+            _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+        'cancel_window_hours': int.tryParse(_hoursCtrl.text.trim()) ?? 2,
+        'class_owner_id':      _ownerId,
+      }).eq('id', widget.courseId);
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onSaved();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Corso aggiornato'),
+            backgroundColor: Color(0xFF66BB6A),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final staff = ref.watch(_staffForCourseProvider);
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text('Modifica corso',
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+
+              TextFormField(
+                controller: _nameCtrl,
+                textInputAction: TextInputAction.next,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Nome corso',
+                  prefixIcon: Icon(Icons.fitness_center_outlined),
+                ),
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? 'Campo obbligatorio' : null,
+              ),
+              const SizedBox(height: 12),
+
+              // Responsabile
+              staff.when(
+                loading: () => const LinearProgressIndicator(),
+                error:   (e, _) => const SizedBox.shrink(),
+                data: (members) => DropdownButtonFormField<String?>(
+                  value: _ownerId,
+                  decoration: const InputDecoration(
+                    labelText: 'Responsabile',
+                    prefixIcon: Icon(Icons.manage_accounts_outlined),
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Nessuno')),
+                    ...members.map((m) => DropdownMenuItem(
+                          value: m['id'] as String,
+                          child: Text(m['full_name'] as String),
+                        )),
+                  ],
+                  onChanged: (v) => setState(() => _ownerId = v),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: _hoursCtrl,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Ore anticipo per disdetta',
+                  prefixIcon: Icon(Icons.timer_outlined),
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return null;
+                  final n = int.tryParse(v.trim());
+                  if (n == null) return 'Inserisci un numero';
+                  if (n < 0) return 'Il valore deve essere ≥ 0';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: _descCtrl,
+                maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Descrizione (opzionale)',
+                  prefixIcon: Icon(Icons.notes_outlined),
+                  alignLabelWithHint: true,
+                ),
+              ),
+
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: theme.colorScheme.error.withAlpha(100)),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.error_outline,
+                        color: theme.colorScheme.onErrorContainer, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(_error!,
+                          style: TextStyle(
+                              color: theme.colorScheme.onErrorContainer,
+                              fontSize: 13)),
+                    ),
+                  ]),
+                ),
+              ],
+
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _loading ? null : _submit,
+                  child: _loading
+                      ? const SizedBox(
+                          height: 20, width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Salva'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

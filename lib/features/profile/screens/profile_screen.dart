@@ -38,9 +38,7 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final roles = ref.watch(appRolesProvider).whenOrNull(data: (r) => r);
-    final isStaff = roles?.isGymOwner == true ||
-        roles?.isClassOwner == true ||
-        roles?.isTrainer == true;
+    final isStaff = roles?.isGymOwner == true || roles?.isTrainer == true;
 
     return isStaff
         ? const _StaffProfileScreen()
@@ -102,7 +100,7 @@ class _StaffProfileScreenState extends ConsumerState<_StaffProfileScreen> {
   }
 
   Future<void> _save() async {
-    final current = ref.read(myProfileProvider).valueOrNull;
+    final current = ref.read(myProfileProvider).asData?.value;
     if (current == null) return;
 
     setState(() => _saving = true);
@@ -711,8 +709,8 @@ class _ThemeToggleTile extends StatelessWidget {
       secondary: Icon(isDark ? Icons.dark_mode_outlined : Icons.light_mode_outlined),
       title: Text(isDark ? 'Tema scuro' : 'Tema chiaro'),
       value: isDark,
-      onChanged: (v) => ref.read(themeModeProvider.notifier).state =
-          v ? ThemeMode.dark : ThemeMode.light,
+      onChanged: (v) => ref.read(themeModeProvider.notifier).set(
+          v ? ThemeMode.dark : ThemeMode.light),
     );
   }
 }

@@ -90,11 +90,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               return days.contains(normalized) ? [true] : [];
             },
             onDaySelected: (selected, focused) {
-              ref.read(selectedDayProvider.notifier).state = selected;
+              ref.read(selectedDayProvider.notifier).set(selected);
             },
             onPageChanged: (focused) {
               setState(() => _focusedMonth = focused);
-              ref.read(selectedDayProvider.notifier).state = focused;
+              ref.read(selectedDayProvider.notifier).set(focused);
             },
           ),
           const Divider(height: 1),

@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/course_type.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
-final _coursesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final coursesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final studioId = ref.watch(currentStudioIdProvider);
   if (studioId == null) return [];
   final client = ref.watch(supabaseClientProvider);
@@ -30,7 +31,7 @@ final _staffForStudioProvider =
       .from('user_studio_roles')
       .select('user_id, role, users(id, full_name)')
       .eq('studio_id', studioId)
-      .inFilter('role', ['trainer', 'class_owner']);
+      .inFilter('role', ['trainer']);
 
   // deduplicate by user_id
   final Map<String, Map<String, dynamic>> byUser = {};
@@ -51,7 +52,7 @@ class CoursesScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final courses = ref.watch(_coursesProvider);
+    final courses = ref.watch(coursesProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Corsi')),
@@ -72,29 +73,29 @@ class CoursesScreen extends ConsumerWidget {
                 itemCount: list.length,
                 separatorBuilder: (context, i) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
-                  final c       = list[i];
-                  final isGroup = c['type'] == 'group';
-                  final owner   = c['users'] as Map<String, dynamic>?;
+                  final c    = list[i];
+                  final type = c['type'] as String? ?? 'group';
+                  final owner = c['users'] as Map<String, dynamic>?;
                   return ListTile(
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                     tileColor: Theme.of(context).colorScheme.surface,
                     leading: CircleAvatar(
-                      backgroundColor: isGroup
-                          ? AppTheme.blue.withAlpha(30)
-                          : const Color(0xFF9C27B0).withAlpha(30),
+                      backgroundColor: type == 'personal'
+                          ? const Color(0xFF9C27B0).withAlpha(30)
+                          : AppTheme.blue.withAlpha(30),
                       child: Icon(
-                        isGroup
-                            ? Icons.group_outlined
-                            : Icons.person_outline,
-                        color: isGroup ? AppTheme.blue : const Color(0xFFCE93D8),
+                        courseTypeIcon(type),
+                        color: type == 'personal'
+                            ? const Color(0xFFCE93D8)
+                            : AppTheme.blue,
                       ),
                     ),
                     title: Text(c['name'] as String,
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(owner != null
                         ? 'Responsabile: ${owner['full_name']}'
-                        : isGroup ? 'Collettivo' : 'Personal'),
+                        : courseTypeLabel(type)),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () =>
                         context.push('/owner/courses/${c['id']}'),
@@ -114,7 +115,7 @@ class CoursesScreen extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => _AddCourseSheet(
-        onCreated: () => ref.invalidate(_coursesProvider),
+        onCreated: () => ref.invalidate(coursesProvider),
       ),
     );
   }
@@ -276,10 +277,17 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
               Row(
                 children: [
                   _TypeChip(
-                    label: 'Collettivo',
+                    label: 'Gruppo',
                     icon: Icons.group_outlined,
                     selected: _type == 'group',
                     onTap: () => setState(() => _type = 'group'),
+                  ),
+                  const SizedBox(width: 8),
+                  _TypeChip(
+                    label: 'Condiviso',
+                    icon: Icons.people_outline,
+                    selected: _type == 'shared',
+                    onTap: () => setState(() => _type = 'shared'),
                   ),
                   const SizedBox(width: 8),
                   _TypeChip(

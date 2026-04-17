@@ -8,6 +8,19 @@ import '../../../core/providers/studio_provider.dart';
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
+final _allCoursesProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final studioId = ref.watch(currentStudioIdProvider);
+  if (studioId == null) return [];
+  final client = ref.watch(supabaseClientProvider);
+  final data = await client
+      .from('courses')
+      .select('id, name, class_owner_id, users!class_owner_id(full_name)')
+      .eq('studio_id', studioId)
+      .order('name');
+  return (data as List).cast<Map<String, dynamic>>();
+});
+
 final _teamProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final studioId = ref.watch(currentStudioIdProvider);
   if (studioId == null) return [];
@@ -17,7 +30,7 @@ final _teamProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
       .from('user_studio_roles')
       .select('role, users(id, full_name, email, phone)')
       .eq('studio_id', studioId)
-      .inFilter('role', ['trainer', 'class_owner']);
+      .inFilter('role', ['trainer']);
 
   // Raggruppa per utente: un utente può avere più ruoli
   final Map<String, Map<String, dynamic>> byUser = {};
@@ -35,14 +48,15 @@ final _teamProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class TeamScreen extends ConsumerWidget {
-  const TeamScreen({super.key});
+  final bool hideAppBar;
+  const TeamScreen({super.key, this.hideAppBar = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final team = ref.watch(_teamProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Team')),
+      appBar: hideAppBar ? null : AppBar(title: const Text('Team')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddTrainerDialog(context, ref),
         icon: const Icon(Icons.person_add_outlined),
@@ -122,18 +136,25 @@ class _EmptyTeam extends StatelessWidget {
 
 // ── Member tile ───────────────────────────────────────────────────────────────
 
-class _MemberTile extends StatelessWidget {
+class _MemberTile extends ConsumerWidget {
   final Map<String, dynamic> member;
   const _MemberTile({required this.member});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final name  = member['full_name'] as String? ?? member['email'] as String? ?? '—';
     final phone = member['phone'] as String?;
-    final roles = (member['roles'] as List<String>)
-        .map((r) => r == 'class_owner' ? 'Class Owner' : 'Trainer')
-        .toSet()
-        .join(' · ');
+
+    // Count courses this trainer is responsible for
+    final courses = ref.watch(_allCoursesProvider).whenOrNull(data: (c) => c) ?? [];
+    final ownedCount = courses
+        .where((c) => c['class_owner_id'] == member['id'])
+        .length;
+    final subtitle = [
+      'Trainer',
+      if (phone != null) phone,
+      if (ownedCount > 0) '$ownedCount cors${ownedCount > 1 ? 'i' : 'o'} responsabile',
+    ].join(' · ');
 
     return ListTile(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -148,10 +169,223 @@ class _MemberTile extends StatelessWidget {
         ),
       ),
       title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(phone != null ? '$roles · $phone' : roles),
+      subtitle: Text(subtitle),
       trailing: Icon(Icons.chevron_right,
           color: Theme.of(context).colorScheme.onSurface.withAlpha(100)),
-      onTap: () => context.push('/u/${member['id']}'),
+      onTap: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: false,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) => _TrainerDetailSheet(
+          member: member,
+          onChanged: () => ref.invalidate(_allCoursesProvider),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Trainer detail sheet ──────────────────────────────────────────────────────
+
+class _TrainerDetailSheet extends ConsumerWidget {
+  final Map<String, dynamic> member;
+  final VoidCallback onChanged;
+  const _TrainerDetailSheet({required this.member, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme       = Theme.of(context);
+    final name        = member['full_name'] as String? ?? '—';
+    final trainerId   = member['id'] as String;
+    final coursesAsync = ref.watch(_allCoursesProvider);
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.5,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      builder: (context, scrollController) => ListView(
+        controller: scrollController,
+        padding: EdgeInsets.fromLTRB(
+            24, 24, 24, MediaQuery.of(context).viewPadding.bottom + 32),
+        children: [
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: theme.colorScheme.primary.withAlpha(20),
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: TextStyle(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(name,
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ),
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  context.push('/u/$trainerId');
+                },
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Profilo'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text('Corsi responsabile',
+              style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: theme.colorScheme.onSurface.withAlpha(180),
+                  letterSpacing: 0.5)),
+          const SizedBox(height: 4),
+          Text('Attiva il toggle per designare questo trainer come responsabile del corso.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurface.withAlpha(140))),
+          const SizedBox(height: 8),
+          coursesAsync.when(
+            loading: () => const Center(child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            )),
+            error: (e, _) => Text('Errore: $e',
+                style: const TextStyle(color: Colors.red)),
+            data: (courses) => courses.isEmpty
+                ? Text('Nessun corso nello studio.',
+                    style: TextStyle(
+                        color: theme.colorScheme.onSurface.withAlpha(150)))
+                : Column(
+                    children: courses
+                        .map((c) => _CourseOwnerToggle(
+                              course: c,
+                              trainerId: trainerId,
+                              trainerName: name,
+                              onChanged: onChanged,
+                            ))
+                        .toList(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CourseOwnerToggle extends ConsumerStatefulWidget {
+  final Map<String, dynamic> course;
+  final String trainerId;
+  final String trainerName;
+  final VoidCallback onChanged;
+  const _CourseOwnerToggle({
+    required this.course,
+    required this.trainerId,
+    required this.trainerName,
+    required this.onChanged,
+  });
+
+  @override
+  ConsumerState<_CourseOwnerToggle> createState() => _CourseOwnerToggleState();
+}
+
+class _CourseOwnerToggleState extends ConsumerState<_CourseOwnerToggle> {
+  bool _loading = false;
+
+  Future<void> _toggle(bool newValue) async {
+    if (newValue) {
+      final currentOwnerId = widget.course['class_owner_id'] as String?;
+      final hasDifferentOwner =
+          currentOwnerId != null && currentOwnerId != widget.trainerId;
+
+      if (hasDifferentOwner) {
+        final currentOwnerName =
+            (widget.course['users'] as Map<String, dynamic>?)?['full_name']
+                as String? ?? '—';
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Sostituire il responsabile?'),
+            content: Text(
+              'Questo corso ha già un responsabile: $currentOwnerName.\n\n'
+              'Procedendo, ${widget.trainerName} diventerà il nuovo responsabile al suo posto.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Annulla'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Sostituisci'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) return;
+      }
+    }
+
+    setState(() => _loading = true);
+    try {
+      final client = ref.read(supabaseClientProvider);
+      await client.from('courses').update({
+        'class_owner_id': newValue ? widget.trainerId : null,
+      }).eq('id', widget.course['id'] as String);
+      widget.onChanged();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isOwner = widget.course['class_owner_id'] == widget.trainerId;
+    final currentOwnerId = widget.course['class_owner_id'] as String?;
+    final hasDifferentOwner =
+        currentOwnerId != null && currentOwnerId != widget.trainerId;
+    final currentOwnerName =
+        (widget.course['users'] as Map<String, dynamic>?)?['full_name']
+            as String?;
+
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(widget.course['name'] as String,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      subtitle: hasDifferentOwner && currentOwnerName != null
+          ? Text('Responsabile: $currentOwnerName',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.error.withAlpha(200)))
+          : null,
+      value: isOwner,
+      onChanged: _loading ? null : _toggle,
+      secondary: _loading
+          ? const SizedBox(
+              width: 20, height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2))
+          : null,
     );
   }
 }
@@ -379,8 +613,7 @@ class _RoleChips extends StatelessWidget {
     return Wrap(
       spacing: 8,
       children: [
-        _chip(context, 'trainer',     'Trainer'),
-        _chip(context, 'class_owner', 'Class Owner'),
+        _chip(context, 'trainer', 'Trainer'),
       ],
     );
   }

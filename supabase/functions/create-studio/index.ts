@@ -82,40 +82,57 @@ serve(async (req) => {
     const jwt = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
     if (!jwt) return errorResponse('Unauthorized', 401);
 
-    const userId = await verifyJWT(jwt, supabaseUrl);
-    if (!userId) return errorResponse('Unauthorized', 401);
+    const callerId = await verifyJWT(jwt, supabaseUrl);
+    if (!callerId) return errorResponse('Unauthorized', 401);
 
-    // ── 1. Avatar da Storage (best effort) ──────────────────────────────────
-    try {
-      await adminClient.storage.from('avatars').remove([`${userId}/avatar`]);
-    } catch (_) { /* ignora se non esiste */ }
+    const { data: ownerRows } = await adminClient
+      .from('user_studio_roles')
+      .select('role')
+      .eq('user_id', callerId)
+      .eq('role', 'owner');
 
-    // ── 2. Elimina record correlati esplicitamente (non ci affidiamo a CASCADE)
-    await adminClient.from('waitlist').delete().eq('user_id', userId);
-    await adminClient.from('bookings').delete().eq('user_id', userId);
-    await adminClient.from('user_plans').delete().eq('user_id', userId);
-    await adminClient.from('user_studio_roles').delete().eq('user_id', userId);
+    const isOwner = (ownerRows ?? []).length > 0;
 
-    // ── 3. Annulla l'assegnazione delle lezioni se il trainer viene eliminato
-    await adminClient.from('lessons').update({ trainer_id: null }).eq('trainer_id', userId);
-    await adminClient.from('courses').update({ class_owner_id: null }).eq('class_owner_id', userId);
+    if (!isOwner) {
+      return errorResponse('Permesso negato', 403);
+    }
 
-    // ── 4. Elimina il profilo da public.users ────────────────────────────────
-    const { error: profileError } = await adminClient
-      .from('users')
-      .delete()
-      .eq('id', userId);
-    if (profileError) throw profileError;
+    const { name, address, organization_name }: {
+      name: string;
+      address?: string;
+      organization_name?: string;
+    } = await req.json();
 
-    // ── 5. Elimina l'utente da auth ──────────────────────────────────────────
-    const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
-    if (deleteError) throw deleteError;
+    if (!name?.trim()) {
+      return errorResponse('Il nome della sede è obbligatorio', 400);
+    }
 
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResponse(msg, 500);
+    const { data: studio, error: studioErr } = await adminClient
+      .from('studios')
+      .insert({
+        name: name.trim(),
+        ...(address?.trim() ? { address: address.trim() } : {}),
+        ...(organization_name?.trim() ? { organization_name: organization_name.trim() } : {}),
+      })
+      .select('id, name, address, organization_name')
+      .single();
+
+    if (studioErr) return errorResponse(studioErr.message, 500);
+
+    const { error: roleErr } = await adminClient
+      .from('user_studio_roles')
+      .insert({ user_id: callerId, studio_id: studio.id, role: 'owner' });
+
+    if (roleErr) {
+      await adminClient.from('studios').delete().eq('id', studio.id);
+      return errorResponse(roleErr.message, 500);
+    }
+
+    return new Response(
+      JSON.stringify(studio),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  } catch (e) {
+    return errorResponse(`Errore interno: ${e}`, 500);
   }
 });

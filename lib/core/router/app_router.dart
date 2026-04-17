@@ -6,11 +6,6 @@ import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/profile/screens/public_profile_screen.dart';
 
-// Admin
-import '../../features/admin/screens/admin_dashboard_screen.dart';
-import '../../features/admin/screens/studios_screen.dart';
-import '../../features/admin/screens/global_users_screen.dart';
-
 // Owner
 import '../../features/owner/screens/owner_calendar_screen.dart';
 import '../../features/owner/screens/courses_screen.dart';
@@ -20,6 +15,7 @@ import '../../features/owner/screens/team_screen.dart';
 import '../../features/owner/screens/clients_screen.dart';
 import '../../features/owner/screens/client_detail_screen.dart';
 import '../../features/owner/screens/plans_screen.dart';
+import '../../features/owner/screens/owner_manage_screen.dart';
 
 // Staff
 import '../../features/staff/screens/staff_calendar_screen.dart';
@@ -38,7 +34,6 @@ import '../../features/shared/screens/studio_info_screen.dart';
 import '../../features/shared/screens/notifications_screen.dart';
 
 // Shells
-import '../../shared/widgets/admin_shell.dart';
 import '../../shared/widgets/owner_shell.dart';
 import '../../shared/widgets/staff_shell.dart';
 import '../../shared/widgets/client_shell.dart';
@@ -82,11 +77,9 @@ class _RouterNotifier extends ChangeNotifier {
 
   bool _isOnCorrectSection(String loc, AppRoles roles) {
     return switch (roles.primaryRole) {
-      UserRole.admin      => loc.startsWith('/admin'),
-      UserRole.gymOwner   => loc.startsWith('/owner'),
-      UserRole.classOwner => loc.startsWith('/staff'),
-      UserRole.trainer    => loc.startsWith('/staff'),
-      UserRole.client     => loc.startsWith('/client'),
+      UserRole.gymOwner => loc.startsWith('/owner'),
+      UserRole.trainer  => loc.startsWith('/staff'),
+      UserRole.client   => loc.startsWith('/client'),
     };
   }
 }
@@ -111,19 +104,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             PublicProfileScreen(userId: state.pathParameters['userId']!),
       ),
 
-      // ── Admin ────────────────────────────────────────────────────────────────
-      ShellRoute(
-        builder: (ctx, state, child) => AdminShell(child: child),
-        routes: [
-          GoRoute(path: '/admin/dashboard',
-              builder: (ctx, state) => const AdminDashboardScreen()),
-          GoRoute(path: '/admin/studios',
-              builder: (ctx, state) => const StudiosScreen()),
-          GoRoute(path: '/admin/users',
-              builder: (ctx, state) => const GlobalUsersScreen()),
-        ],
-      ),
-
       // ── Gym Owner ────────────────────────────────────────────────────────────
       ShellRoute(
         builder: (ctx, state, child) => OwnerShell(child: child),
@@ -133,13 +113,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/owner/roster/:lessonId',
               builder: (ctx, state) => RosterScreen(
                     lessonId: state.pathParameters['lessonId']!)),
-          GoRoute(path: '/owner/requests',
-              builder: (ctx, state) => const PendingLessonsScreen()),
           GoRoute(path: '/owner/courses',
               builder: (ctx, state) => const CoursesScreen()),
           GoRoute(path: '/owner/courses/:courseId',
               builder: (ctx, state) => CourseDetailScreen(
                     courseId: state.pathParameters['courseId']!)),
+          GoRoute(path: '/owner/manage',
+              builder: (ctx, state) => const OwnerManageScreen()),
           GoRoute(path: '/owner/rooms',
               builder: (ctx, state) => const RoomsScreen()),
           GoRoute(path: '/owner/team',
@@ -160,7 +140,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // ── Staff (class_owner + trainer) ────────────────────────────────────────
+      // ── Staff (trainer) ──────────────────────────────────────────────────────
       ShellRoute(
         builder: (ctx, state, child) => StaffShell(child: child),
         routes: [

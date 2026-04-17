@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/course_type.dart';
 import '../../../core/models/user_role.dart';
 import '../../../core/providers/studio_provider.dart';
 import '../../../core/theme/app_theme.dart';
@@ -36,10 +37,9 @@ class PublicProfileScreen extends ConsumerWidget {
     // Determina il prefisso route corretto per i link ai corsi
     final roles = ref.watch(appRolesProvider).whenOrNull(data: (r) => r);
     final courseRoutePrefix = switch (roles?.primaryRole) {
-      UserRole.gymOwner   => '/owner',
-      UserRole.classOwner => '/staff',
-      UserRole.trainer    => '/staff',
-      _                   => '/client',
+      UserRole.gymOwner => '/owner',
+      UserRole.trainer  => '/staff',
+      _                 => '/client',
     };
 
     return Scaffold(
@@ -219,7 +219,7 @@ class _CourseTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isGroup = course['type'] == 'group';
+    final courseType = course['type'] as String? ?? 'group';
     return GestureDetector(
       onTap: () => context.push('$routePrefix/courses/${course['id']}'),
       child: Container(
@@ -236,14 +236,14 @@ class _CourseTile extends StatelessWidget {
               width: 34,
               height: 34,
               decoration: BoxDecoration(
-                color: isGroup
-                    ? AppTheme.blue.withAlpha(30)
-                    : const Color(0xFF9C27B0).withAlpha(30),
+                color: courseType == 'personal'
+                    ? const Color(0xFF9C27B0).withAlpha(30)
+                    : AppTheme.blue.withAlpha(30),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
-                isGroup ? Icons.group_outlined : Icons.person_outline,
-                color: isGroup ? AppTheme.blue : const Color(0xFFCE93D8),
+                courseTypeIcon(courseType),
+                color: courseType == 'personal' ? const Color(0xFFCE93D8) : AppTheme.blue,
                 size: 18,
               ),
             ),

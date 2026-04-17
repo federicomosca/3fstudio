@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/course_type.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/providers/selected_studio_provider.dart';
 import '../../../features/auth/providers/auth_provider.dart';
@@ -25,7 +26,7 @@ final _allTeamProvider =
       .from('user_studio_roles')
       .select('role, users(id, full_name, bio, avatar_url, specializations)')
       .inFilter('studio_id', studioIds)
-      .inFilter('role', ['trainer', 'class_owner', 'owner']);
+      .inFilter('role', ['trainer', 'owner']);
 
   // Deduplica per utente
   final Map<String, Map<String, dynamic>> byUser = {};
@@ -89,6 +90,13 @@ class StudioInfoScreen extends ConsumerWidget {
     final roomsAsync   = ref.watch(_allRoomsProvider);
     final teamAsync    = ref.watch(_allTeamProvider);
     final coursesAsync = ref.watch(_allCoursesProvider);
+
+    final loc = GoRouterState.of(context).uri.path;
+    final courseBasePath = loc.startsWith('/owner')
+        ? '/owner/courses'
+        : loc.startsWith('/staff')
+            ? '/staff/courses'
+            : '/client/courses';
 
     return Scaffold(
       body: CustomScrollView(
@@ -243,7 +251,7 @@ class StudioInfoScreen extends ConsumerWidget {
                       separatorBuilder: (context, i) =>
                           const SizedBox(height: 8),
                       itemBuilder: (context, i) =>
-                          _CourseTile(course: courses[i]),
+                          _CourseTile(course: courses[i], courseBasePath: courseBasePath),
                     ),
                   ),
           ),
@@ -353,14 +361,17 @@ class _RoomTile extends StatelessWidget {
 
 class _CourseTile extends StatelessWidget {
   final Map<String, dynamic> course;
-  const _CourseTile({required this.course});
+  final String courseBasePath;
+  const _CourseTile({required this.course, required this.courseBasePath});
 
   @override
   Widget build(BuildContext context) {
-    final isGroup = course['type'] == 'group';
+    final courseType = course['type'] as String? ?? 'group';
     final owner   = course['users'] as Map<String, dynamic>?;
 
-    return Container(
+    return GestureDetector(
+      onTap: () => context.push('$courseBasePath/${course['id']}'),
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -373,14 +384,14 @@ class _CourseTile extends StatelessWidget {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: isGroup
-                  ? AppTheme.blue.withAlpha(30)
-                  : const Color(0xFF9C27B0).withAlpha(30),
+              color: courseType == 'personal'
+                  ? const Color(0xFF9C27B0).withAlpha(30)
+                  : AppTheme.blue.withAlpha(30),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
-              isGroup ? Icons.group_outlined : Icons.person_outline,
-              color: isGroup ? AppTheme.blue : const Color(0xFFCE93D8),
+              courseTypeIcon(courseType),
+              color: courseType == 'personal' ? const Color(0xFFCE93D8) : AppTheme.blue,
               size: 18,
             ),
           ),
@@ -411,22 +422,27 @@ class _CourseTile extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: isGroup
-                  ? AppTheme.blue.withAlpha(20)
-                  : const Color(0xFF9C27B0).withAlpha(20),
+              color: courseType == 'personal'
+                  ? const Color(0xFF9C27B0).withAlpha(20)
+                  : AppTheme.blue.withAlpha(20),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              isGroup ? 'Collettivo' : 'Personal',
+              courseTypeLabel(courseType),
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: isGroup ? AppTheme.blue : const Color(0xFFCE93D8),
+                color: courseType == 'personal' ? const Color(0xFFCE93D8) : AppTheme.blue,
               ),
             ),
           ),
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right,
+              size: 18,
+              color: Theme.of(context).colorScheme.onSurface.withAlpha(100)),
         ],
       ),
+    ),
     );
   }
 }

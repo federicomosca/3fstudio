@@ -3,7 +3,14 @@ import '../../../core/models/lesson.dart';
 import '../../../core/providers/studio_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 
-final selectedDayProvider = StateProvider<DateTime>((ref) => DateTime.now());
+class _SelectedDayNotifier extends Notifier<DateTime> {
+  @override
+  DateTime build() => DateTime.now();
+  void set(DateTime day) => state = day;
+}
+
+final selectedDayProvider =
+    NotifierProvider<_SelectedDayNotifier, DateTime>(_SelectedDayNotifier.new);
 
 final lessonsForDayProvider =
     FutureProvider.family<List<Lesson>, DateTime>((ref, date) async {

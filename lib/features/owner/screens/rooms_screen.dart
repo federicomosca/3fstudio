@@ -21,14 +21,15 @@ final _roomsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class RoomsScreen extends ConsumerWidget {
-  const RoomsScreen({super.key});
+  final bool hideAppBar;
+  const RoomsScreen({super.key, this.hideAppBar = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rooms = ref.watch(_roomsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Spazi')),
+      appBar: hideAppBar ? null : AppBar(title: const Text('Spazi')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showRoomSheet(context, ref),
         icon: const Icon(Icons.add),
@@ -72,11 +73,27 @@ class RoomsScreen extends ConsumerWidget {
 
   Future<void> _deleteRoom(
       BuildContext context, WidgetRef ref, Map<String, dynamic> room) async {
+    final client = ref.read(supabaseClientProvider);
+    final roomId = room['id'] as String;
+
+    final lessonIds = await client
+        .from('lessons')
+        .select('id')
+        .eq('room_id', roomId);
+    final ids = (lessonIds as List).map((r) => r['id'] as String).toList();
+
+    if (!context.mounted) return;
+    final hasLessons = ids.isNotEmpty;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Elimina spazio'),
-        content: Text('Sei sicuro di voler eliminare "${room['name']}"?'),
+        content: Text(
+          hasLessons
+              ? 'Lo spazio "${room['name']}" ha ${ids.length} lezioni associate '
+                '(con le relative prenotazioni). Verranno eliminate tutte. Continuare?'
+              : 'Sei sicuro di voler eliminare "${room['name']}"?',
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -91,8 +108,11 @@ class RoomsScreen extends ConsumerWidget {
     if (confirm != true) return;
 
     try {
-      final client = ref.read(supabaseClientProvider);
-      await client.from('rooms').delete().eq('id', room['id'] as String);
+      if (hasLessons) {
+        await client.from('bookings').delete().inFilter('lesson_id', ids);
+        await client.from('lessons').delete().eq('room_id', roomId);
+      }
+      await client.from('rooms').delete().eq('id', roomId);
       ref.invalidate(_roomsProvider);
       if (context.mounted) {
         ScaffoldMessenger.of(context)
@@ -101,8 +121,7 @@ class RoomsScreen extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Errore: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
         );
       }
     }

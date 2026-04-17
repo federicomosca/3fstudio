@@ -43,7 +43,7 @@ serve(async (req) => {
       full_name,
       email,
       password,
-      role,       // 'trainer' | 'class_owner' | 'client'
+      role,       // 'trainer' | 'client'
       studio_id,
       phone,
     }: {
@@ -105,15 +105,9 @@ serve(async (req) => {
     }
 
     // ── Assegna ruolo studio ───────────────────────────────────────────────
-    const rolesToInsert: { user_id: string; studio_id: string; role: string }[] = [
+    const { error: roleErr } = await adminClient.from('user_studio_roles').insert(
       { user_id: userId, studio_id, role },
-    ];
-
-    if (role === 'class_owner') {
-      rolesToInsert.push({ user_id: userId, studio_id, role: 'trainer' });
-    }
-
-    const { error: roleErr } = await adminClient.from('user_studio_roles').insert(rolesToInsert);
+    );
 
     if (roleErr) {
       await adminClient.auth.admin.deleteUser(userId);

@@ -36,24 +36,14 @@ class OwnerShell extends ConsumerWidget {
             label: 'Corsi',
           ),
           const NavigationDestination(
-            icon: Icon(Icons.meeting_room_outlined),
-            selectedIcon: Icon(Icons.meeting_room),
-            label: 'Spazi',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.group_outlined),
-            selectedIcon: Icon(Icons.group),
-            label: 'Team',
-          ),
-          NavigationDestination(
-            icon: _PlansBadge(selected: false),
-            selectedIcon: _PlansBadge(selected: true),
-            label: 'Piani',
-          ),
-          const NavigationDestination(
             icon: Icon(Icons.people_outline),
             selectedIcon: Icon(Icons.people),
             label: 'Clienti',
+          ),
+          NavigationDestination(
+            icon: _GestioneBadge(selected: false),
+            selectedIcon: _GestioneBadge(selected: true),
+            label: 'Gestione',
           ),
           const NavigationDestination(
             icon: Icon(Icons.home_outlined),
@@ -73,12 +63,11 @@ class OwnerShell extends ConsumerWidget {
   int _index(String loc) {
     if (loc.startsWith('/owner/calendar') || loc.startsWith('/owner/requests')) return 0;
     if (loc.startsWith('/owner/courses'))                                        return 1;
-    if (loc.startsWith('/owner/rooms'))                                          return 2;
-    if (loc.startsWith('/owner/team'))                                           return 3;
-    if (loc.startsWith('/owner/plans'))                                          return 4;
-    if (loc.startsWith('/owner/clients'))                                        return 5;
-    if (loc.startsWith('/owner/studio'))                                         return 6;
-    if (loc.startsWith('/owner/notifications') || loc.startsWith('/owner/profile')) return 7;
+    if (loc.startsWith('/owner/clients'))                                        return 2;
+    if (loc.startsWith('/owner/manage') || loc.startsWith('/owner/rooms') ||
+        loc.startsWith('/owner/team')   || loc.startsWith('/owner/plans'))      { return 3; }
+    if (loc.startsWith('/owner/studio'))                                         return 4;
+    if (loc.startsWith('/owner/notifications') || loc.startsWith('/owner/profile')) return 5;
     return 0;
   }
 
@@ -86,20 +75,18 @@ class OwnerShell extends ConsumerWidget {
     switch (i) {
       case 0: context.go('/owner/calendar');
       case 1: context.go('/owner/courses');
-      case 2: context.go('/owner/rooms');
-      case 3: context.go('/owner/team');
-      case 4: context.go('/owner/plans');
-      case 5: context.go('/owner/clients');
-      case 6: context.go('/owner/studio');
-      case 7: context.go('/owner/notifications');
+      case 2: context.go('/owner/clients');
+      case 3: context.go('/owner/manage');
+      case 4: context.go('/owner/studio');
+      case 5: context.go('/owner/notifications');
     }
   }
 }
 
-// Badge sulla voce "Piani" che mostra il numero di richieste in attesa.
-class _PlansBadge extends ConsumerWidget {
+// Badge sulla voce "Gestione" che mostra il numero di richieste piani in attesa.
+class _GestioneBadge extends ConsumerWidget {
   final bool selected;
-  const _PlansBadge({required this.selected});
+  const _GestioneBadge({required this.selected});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -109,7 +96,7 @@ class _PlansBadge extends ConsumerWidget {
         0;
 
     final icon = Icon(
-      selected ? Icons.card_membership : Icons.card_membership_outlined,
+      selected ? Icons.tune : Icons.tune_outlined,
     );
 
     if (count == 0) return icon;

@@ -10,7 +10,14 @@ import '../../../core/providers/studio_provider.dart';
 
 // ── Providers ────────────────────────────────────────────────────────────────
 
-final _staffSelectedDayProvider = StateProvider<DateTime>((ref) => DateTime.now());
+class _StaffSelectedDayNotifier extends Notifier<DateTime> {
+  @override
+  DateTime build() => DateTime.now();
+  void set(DateTime day) => state = day;
+}
+
+final _staffSelectedDayProvider =
+    NotifierProvider<_StaffSelectedDayNotifier, DateTime>(_StaffSelectedDayNotifier.new);
 
 final _staffLessonsForDayProvider =
     FutureProvider.family<List<Map<String, dynamic>>, DateTime>((ref, date) async {
@@ -18,24 +25,20 @@ final _staffLessonsForDayProvider =
   final studioId = ref.watch(currentStudioIdProvider);
   if (user == null || studioId == null) return [];
 
-  final client   = ref.watch(supabaseClientProvider);
-  final roles    = ref.watch(appRolesProvider).whenOrNull(data: (r) => r);
-  final start    = DateTime(date.year, date.month, date.day).toUtc().toIso8601String();
-  final end      = DateTime(date.year, date.month, date.day + 1).toUtc().toIso8601String();
+  final client      = ref.watch(supabaseClientProvider);
+  final ownedCourses = await ref.watch(_myOwnedCoursesProvider.future);
+  final start       = DateTime(date.year, date.month, date.day).toUtc().toIso8601String();
+  final end         = DateTime(date.year, date.month, date.day + 1).toUtc().toIso8601String();
 
-  // class_owner: vede lezioni di tutti i suoi corsi
-  // trainer puro: vede solo le lezioni in cui è assegnato
   var query = client
       .from('lessons')
       .select('id, starts_at, ends_at, capacity, status, courses(name, type, class_owner_id), bookings(count)')
       .gte('starts_at', start)
       .lt('starts_at', end);
 
-  if (roles?.isClassOwner == true) {
-    // class_owner: vede solo le lezioni dei propri corsi
+  if (ownedCourses.isNotEmpty) {
     query = query.eq('courses.class_owner_id', user.id);
   } else {
-    // trainer puro: vede solo le lezioni in cui è assegnato
     query = query.eq('trainer_id', user.id);
   }
 
@@ -90,11 +93,11 @@ class StaffCalendarScreen extends ConsumerStatefulWidget {
 class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
   @override
   Widget build(BuildContext context) {
-    final selectedDay = ref.watch(_staffSelectedDayProvider);
-    final lessons     = ref.watch(_staffLessonsForDayProvider(selectedDay));
-    final roles       = ref.watch(appRolesProvider).whenOrNull(data: (r) => r);
-    final isClassOwner = roles?.isClassOwner == true;
-    final timeFmt     = DateFormat('HH:mm');
+    final selectedDay  = ref.watch(_staffSelectedDayProvider);
+    final lessons      = ref.watch(_staffLessonsForDayProvider(selectedDay));
+    final ownedCourses = ref.watch(_myOwnedCoursesProvider).whenOrNull(data: (c) => c) ?? [];
+    final isCourseOwner = ownedCourses.isNotEmpty;
+    final timeFmt      = DateFormat('HH:mm');
     final dayFmt      = DateFormat('EEEE d MMMM', 'it_IT');
     final theme       = Theme.of(context);
 
@@ -108,7 +111,7 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
           ),
         ],
       ),
-      floatingActionButton: isClassOwner
+      floatingActionButton: isCourseOwner
           ? FloatingActionButton.extended(
               onPressed: () => _showProposeSheet(context, selectedDay),
               icon: const Icon(Icons.add),
@@ -153,9 +156,9 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
               weekendTextStyle: TextStyle(color: Color(0xFFAAAAAA)),
             ),
             onDaySelected: (selected, _) =>
-                ref.read(_staffSelectedDayProvider.notifier).state = selected,
+                ref.read(_staffSelectedDayProvider.notifier).set(selected),
             onPageChanged: (focused) {
-              ref.read(_staffSelectedDayProvider.notifier).state = focused;
+              ref.read(_staffSelectedDayProvider.notifier).set(focused);
             },
           ),
           const Divider(height: 1),

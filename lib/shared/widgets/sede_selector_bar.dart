@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/studio.dart';
 import '../../core/providers/selected_studio_provider.dart';
 import '../../core/providers/studio_provider.dart';
-import '../../features/auth/providers/auth_provider.dart'
-    show currentUserProvider, supabaseClientProvider;
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 
 /// Barra superiore per selezionare la sede attiva.
 /// Mostrata in tutti i shell (owner, staff, client).
@@ -22,7 +22,7 @@ class SedeSelectorBar extends ConsumerWidget {
     final selectedAsync = ref.watch(selectedStudioProvider);
     final theme         = Theme.of(context);
     final roles         = ref.watch(appRolesProvider).whenOrNull(data: (r) => r);
-    final canAddSede    = (roles?.isAdmin ?? false) || (roles?.isGymOwner ?? false);
+    final canAddSede    = roles?.isGymOwner ?? false;
 
     final sedi     = sediAsync.whenOrNull(data: (s) => s) ?? [];
     final selected = selectedAsync.whenOrNull(data: (s) => s);
@@ -56,6 +56,15 @@ class SedeSelectorBar extends ConsumerWidget {
                     data: (studio) => Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (studio?.organizationName != null)
+                          Text(
+                            studio!.organizationName!,
+                            style: TextStyle(
+                              color: Colors.white.withAlpha(180),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         Text(
                           studio?.name ?? '—',
                           style: const TextStyle(
@@ -67,8 +76,7 @@ class SedeSelectorBar extends ConsumerWidget {
                         if (studio?.address != null)
                           Text(
                             studio!.address!,
-                            style:
-                                TextStyle(color: Colors.white.withAlpha(180), fontSize: 11),
+                            style: TextStyle(color: Colors.white.withAlpha(180), fontSize: 11),
                             overflow: TextOverflow.ellipsis,
                           ),
                       ],
@@ -135,6 +143,7 @@ class SedeSelectorBar extends ConsumerWidget {
   }
 
   void _showAddSedeDialog(BuildContext context, WidgetRef ref) {
+    final orgCtrl     = TextEditingController();
     final nameCtrl    = TextEditingController();
     final addressCtrl = TextEditingController();
     final formKey     = GlobalKey<FormState>();
@@ -151,10 +160,21 @@ class SedeSelectorBar extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextFormField(
+                  controller: orgCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Organizzazione',
+                    prefixIcon: Icon(Icons.business_outlined),
+                    hintText: 'es. AL.FA.SE asd',
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
                   controller: nameCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Nome sede *',
                     prefixIcon: Icon(Icons.store),
+                    hintText: 'es. Via Aquileia 34',
                   ),
                   textCapitalization: TextCapitalization.words,
                   validator: (v) =>
@@ -185,42 +205,40 @@ class SedeSelectorBar extends ConsumerWidget {
                       setState(() => saving = true);
 
                       try {
-                        final client = ref.read(supabaseClientProvider);
-                        final user   = ref.read(currentUserProvider);
+                        final session = Supabase.instance.client.auth.currentSession;
+                        if (session == null) throw Exception('Sessione scaduta');
 
                         final address = addressCtrl.text.trim();
-                        final row = await client
-                            .from('studios')
-                            .insert({
-                              'name': nameCtrl.text.trim(),
-                              if (address.isNotEmpty) 'address': address,
-                            })
-                            .select('id, name, address')
-                            .single();
+                        final org     = orgCtrl.text.trim();
+                        final response = await Supabase.instance.client.functions.invoke(
+                          'create-studio',
+                          body: {
+                            'name': nameCtrl.text.trim(),
+                            if (address.isNotEmpty) 'address': address,
+                            if (org.isNotEmpty) 'organization_name': org,
+                          },
+                          headers: {'Authorization': 'Bearer ${session.accessToken}'},
+                        );
 
-                        if (user != null) {
-                          await client.from('user_studio_roles').insert({
-                            'user_id':   user.id,
-                            'studio_id': row['id'],
-                            'role':      'owner',
-                          });
+                        if (response.status != 200) {
+                          final msg = (response.data as Map?)?['error'] as String?
+                              ?? 'Errore sconosciuto';
+                          throw Exception(msg);
                         }
+
+                        final row = response.data as Map<String, dynamic>;
 
                         ref.invalidate(userSediProvider);
                         ref.invalidate(selectedStudioProvider);
 
                         if (ctx.mounted) Navigator.pop(ctx);
 
-                        // Aspetta che il provider si aggiorni, poi seleziona la nuova sede
-                        final newStudios =
-                            await ref.read(userSediProvider.future);
+                        final newStudios = await ref.read(userSediProvider.future);
                         final newStudio = newStudios.firstWhere(
                           (s) => s.id == (row['id'] as String),
                           orElse: () => newStudios.last,
                         );
-                        ref
-                            .read(selectedStudioProvider.notifier)
-                            .select(newStudio);
+                        ref.read(selectedStudioProvider.notifier).select(newStudio);
                       } catch (e) {
                         setState(() => saving = false);
                         if (ctx.mounted) {
