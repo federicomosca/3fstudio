@@ -13,7 +13,7 @@ final selectedDayProvider =
     NotifierProvider<_SelectedDayNotifier, DateTime>(_SelectedDayNotifier.new);
 
 final lessonsForDayProvider =
-    FutureProvider.family<List<Lesson>, DateTime>((ref, date) async {
+    FutureProvider.autoDispose.family<List<Lesson>, DateTime>((ref, date) async {
   final studioId = ref.watch(currentStudioIdProvider);
   if (studioId == null) return [];
 
@@ -38,7 +38,7 @@ final lessonsForDayProvider =
 
 // Giorni del mese corrente che hanno almeno una lezione
 final lessonDaysProvider =
-    FutureProvider.family<Set<DateTime>, DateTime>((ref, month) async {
+    FutureProvider.autoDispose.family<Set<DateTime>, DateTime>((ref, month) async {
   final studioId = ref.watch(currentStudioIdProvider);
   if (studioId == null) return {};
 

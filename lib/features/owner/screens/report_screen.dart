@@ -69,10 +69,10 @@ final _reportProvider =
   final start  = now.subtract(Duration(days: days)).toIso8601String();
   final end    = now.toIso8601String();
 
-  // Fetch all lessons for this studio in the period
+  // Single query: lessons + inline bookings for the period
   final lessonData = await client
       .from('lessons')
-      .select('id, starts_at, courses!inner(id, name, studio_id)')
+      .select('starts_at, bookings(status), courses!inner(name, studio_id)')
       .eq('courses.studio_id', studioId)
       .gte('starts_at', start)
       .lte('starts_at', end);
@@ -83,71 +83,49 @@ final _reportProvider =
         totalBookings: 0, attended: 0, cancelled: 0, courses: [], weeks: []);
   }
 
-  final lessonIds = lessons.map((l) => l['id'] as String).toList();
-
-  // Build lesson → course name map
-  final lessonCourse = <String, String>{};
-  final lessonStartsAt = <String, DateTime>{};
-  for (final l in lessons) {
-    final course = l['courses'] as Map<String, dynamic>;
-    lessonCourse[l['id'] as String]    = course['name'] as String;
-    lessonStartsAt[l['id'] as String]  =
-        DateTime.parse(l['starts_at'] as String).toLocal();
-  }
-
-  // Fetch bookings for those lessons
-  final bookingData = await client
-      .from('bookings')
-      .select('status, lesson_id')
-      .inFilter('lesson_id', lessonIds)
-      .inFilter('status', ['confirmed', 'attended', 'no_show', 'cancelled']);
-
-  final bookings = (bookingData as List).cast<Map<String, dynamic>>();
-
   // Aggregate overall stats
   int totalBookings = 0;
   int attended      = 0;
   int cancelled     = 0;
 
-  // Per-course aggregation
   final courseMap = <String, _CourseStats>{};
+  final weekMap   = <String, _WeekStats>{};
 
-  // Per-week aggregation (ISO week label)
-  final weekMap = <String, _WeekStats>{};
+  for (final lesson in lessons) {
+    final course     = lesson['courses'] as Map<String, dynamic>;
+    final courseName = course['name'] as String;
+    final lessonDt   =
+        DateTime.parse(lesson['starts_at'] as String).toLocal();
+    final bookings   = (lesson['bookings'] as List? ?? [])
+        .cast<Map<String, dynamic>>();
 
-  for (final b in bookings) {
-    final status   = b['status'] as String;
-    final lessonId = b['lesson_id'] as String;
-    final courseName = lessonCourse[lessonId] ?? '?';
-    final lessonDt   = lessonStartsAt[lessonId];
+    for (final b in bookings) {
+      final status      = b['status'] as String;
+      final isCancelled = status == 'cancelled';
+      final isAttended  = status == 'attended';
 
-    final isCancelled = status == 'cancelled';
-    final isAttended  = status == 'attended';
-    final isConfirmed = status == 'confirmed' || status == 'no_show' || isAttended;
+      if (!isCancelled) totalBookings++;
+      if (isAttended)   attended++;
+      if (isCancelled)  cancelled++;
 
-    if (!isCancelled) totalBookings++;
-    if (isAttended)   attended++;
-    if (isCancelled)  cancelled++;
+      if (!isCancelled) {
+        final prev = courseMap[courseName] ??
+            _CourseStats(name: courseName, bookings: 0, attended: 0);
+        courseMap[courseName] = _CourseStats(
+          name:     courseName,
+          bookings: prev.bookings + 1,
+          attended: prev.attended + (isAttended ? 1 : 0),
+        );
 
-    if (!isCancelled) {
-      final prev = courseMap[courseName] ??
-          _CourseStats(name: courseName, bookings: 0, attended: 0);
-      courseMap[courseName] = _CourseStats(
-        name:     courseName,
-        bookings: prev.bookings + 1,
-        attended: prev.attended + (isAttended ? 1 : 0),
-      );
-    }
-
-    if (lessonDt != null && !isCancelled) {
-      final weekLabel = _weekLabel(lessonDt);
-      final prev      = weekMap[weekLabel] ??
-          _WeekStats(label: weekLabel, bookings: 0, attended: 0);
-      weekMap[weekLabel] = _WeekStats(
-        label:    weekLabel,
-        bookings: prev.bookings + 1,
-        attended: prev.attended + (isAttended ? 1 : 0),
-      );
+        final weekLabel = _weekLabel(lessonDt);
+        final wPrev     = weekMap[weekLabel] ??
+            _WeekStats(label: weekLabel, bookings: 0, attended: 0);
+        weekMap[weekLabel] = _WeekStats(
+          label:    weekLabel,
+          bookings: wPrev.bookings + 1,
+          attended: wPrev.attended + (isAttended ? 1 : 0),
+        );
+      }
     }
   }
 

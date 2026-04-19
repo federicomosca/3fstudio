@@ -2,49 +2,66 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../calendar/providers/lessons_provider.dart';
 
-// Set di lesson_id prenotati dall'utente corrente (status confirmed)
+// Set di lesson_id prenotati dall'utente (confirmed) — solo lezioni future/oggi
 final userBookingsProvider = FutureProvider<Set<String>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return {};
 
-  final client = ref.watch(supabaseClientProvider);
+  final client  = ref.watch(supabaseClientProvider);
+  final today   = DateTime.now();
+  final startOfToday = DateTime(today.year, today.month, today.day)
+      .toUtc().toIso8601String();
+
   final response = await client
       .from('bookings')
-      .select('lesson_id')
+      .select('lesson_id, lessons!inner(starts_at)')
       .eq('user_id', user.id)
-      .eq('status', 'confirmed');
+      .eq('status', 'confirmed')
+      .gte('lessons.starts_at', startOfToday);
 
   return (response as List)
       .map<String>((b) => b['lesson_id'] as String)
       .toSet();
 });
 
-// Set di lesson_id per cui l'utente è in lista d'attesa
+// Set di lesson_id in lista d'attesa — solo lezioni future/oggi
 final userWaitlistProvider = FutureProvider<Set<String>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return {};
-  final client = ref.watch(supabaseClientProvider);
+
+  final client  = ref.watch(supabaseClientProvider);
+  final today   = DateTime.now();
+  final startOfToday = DateTime(today.year, today.month, today.day)
+      .toUtc().toIso8601String();
+
   final response = await client
       .from('waitlist')
-      .select('lesson_id')
-      .eq('user_id', user.id);
+      .select('lesson_id, lessons!inner(starts_at)')
+      .eq('user_id', user.id)
+      .gte('lessons.starts_at', startOfToday);
+
   return (response as List)
       .map<String>((w) => w['lesson_id'] as String)
       .toSet();
 });
 
-// Set di lesson_id con prenotazione prova in attesa di approvazione
+// Set di lesson_id con prova in attesa — solo lezioni future/oggi
 final userPendingTrialLessonsProvider = FutureProvider<Set<String>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return {};
 
-  final client = ref.watch(supabaseClientProvider);
+  final client  = ref.watch(supabaseClientProvider);
+  final today   = DateTime.now();
+  final startOfToday = DateTime(today.year, today.month, today.day)
+      .toUtc().toIso8601String();
+
   final response = await client
       .from('bookings')
-      .select('lesson_id')
+      .select('lesson_id, lessons!inner(starts_at)')
       .eq('user_id', user.id)
       .eq('status', 'pending')
-      .eq('is_trial', true);
+      .eq('is_trial', true)
+      .gte('lessons.starts_at', startOfToday);
 
   return (response as List)
       .map<String>((b) => b['lesson_id'] as String)
