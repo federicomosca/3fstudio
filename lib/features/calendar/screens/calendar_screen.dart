@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
+import '../../../core/models/lesson.dart';
+
 import '../../../core/theme/app_theme.dart';
 import '../../../features/booking/providers/booking_provider.dart';
 
@@ -25,9 +27,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final selectedDay    = ref.watch(selectedDayProvider);
     final lessonDays     = ref.watch(lessonDaysProvider(_focusedMonth));
     final lessons        = ref.watch(lessonsForDayProvider(selectedDay));
-    final userBookings   = ref.watch(userBookingsProvider);
-    final enrolledCourses = ref.watch(userEnrolledCourseIdsProvider);
-    final pendingTrials  = ref.watch(userPendingTrialLessonsProvider);
+    final userBookings  = ref.watch(userBookingsProvider);
+    final hasActivePlan = ref.watch(hasActivePlanProvider);
+    final pendingTrials = ref.watch(userPendingTrialLessonsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -133,9 +135,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   );
                 }
 
-                final bookedIds     = userBookings.whenOrNull(data: (ids) => ids) ?? {};
-                final enrolledIds   = enrolledCourses.whenOrNull(data: (ids) => ids) ?? {};
-                final pendingIds    = pendingTrials.whenOrNull(data: (ids) => ids) ?? {};
+                final bookedIds    = userBookings.whenOrNull(data: (ids) => ids) ?? {};
+                final clientHasPlan = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
+                final pendingIds  = pendingTrials.whenOrNull(data: (ids) => ids) ?? {};
 
                 return ListView.builder(
                   padding: const EdgeInsets.only(bottom: 16),
@@ -143,18 +145,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   itemBuilder: (context, index) {
                     final lesson         = lessonList[index];
                     final isBooked       = bookedIds.contains(lesson.id);
-                    final isEnrolled     = enrolledIds.contains(lesson.courseId);
                     final isPendingTrial = pendingIds.contains(lesson.id);
 
                     return LessonCard(
                       lesson: lesson,
                       isBooked: isBooked,
-                      isEnrolled: isEnrolled,
+                      hasActivePlan: clientHasPlan,
                       isPendingTrial: isPendingTrial,
                       bookedCount: 0,
                       onBook: () => _book(lesson.id),
                       onCancel: () => _cancel(lesson.id),
-                      onBookTrial: () => _bookTrial(lesson.id),
+                      onBookTrial: () => _bookTrial(lesson),
                     );
                   },
                 );
@@ -166,13 +167,59 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Future<void> _bookTrial(String lessonId) async {
+  Future<void> _bookTrial(Lesson lesson) async {
+    final timeFormat = DateFormat('HH:mm');
+    final dateFormat = DateFormat('EEEE d MMMM', 'it_IT');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Richiedi lezione di prova'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              lesson.courseName,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${dateFormat.format(lesson.startTime)} · '
+              '${timeFormat.format(lesson.startTime)}–${timeFormat.format(lesson.endTime)}',
+              style: TextStyle(
+                  color: Theme.of(ctx).colorScheme.onSurface.withAlpha(180),
+                  fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'La richiesta sarà inviata all\'istruttore, '
+              'che ti confermerà la disponibilità.',
+              style: TextStyle(fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Richiedi prova'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
     try {
-      await ref.read(bookingNotifierProvider.notifier).bookTrialLesson(lessonId);
+      await ref.read(bookingNotifierProvider.notifier).bookTrialLesson(lesson.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Richiesta inviata — attendi l\'approvazione'),
+          SnackBar(
+            content: Text('Richiesta inviata per ${lesson.courseName}!'),
           ),
         );
       }

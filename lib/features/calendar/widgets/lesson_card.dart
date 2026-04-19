@@ -7,8 +7,8 @@ import '../../../core/models/lesson.dart';
 class LessonCard extends StatelessWidget {
   final Lesson lesson;
   final bool isBooked;
-  /// Il client ha almeno una prenotazione confirmed/attended per questo corso.
-  final bool isEnrolled;
+  /// Il client ha un piano attivo valido (crediti > 0 o unlimited).
+  final bool hasActivePlan;
   /// Il client ha già una prenotazione prova in attesa per questa lezione.
   final bool isPendingTrial;
   final int bookedCount;
@@ -22,7 +22,7 @@ class LessonCard extends StatelessWidget {
     required this.lesson,
     required this.isBooked,
     required this.bookedCount,
-    this.isEnrolled = true,
+    this.hasActivePlan = false,
     this.isPendingTrial = false,
     this.onBook,
     this.onCancel,
@@ -61,7 +61,7 @@ class LessonCard extends StatelessWidget {
             // Linea verticale
             Container(
               width: 2,
-              height: 48,
+              height: 64,
               decoration: BoxDecoration(
                 color: isBooked
                     ? theme.colorScheme.primary
@@ -83,6 +83,7 @@ class LessonCard extends StatelessWidget {
                         ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Icon(
@@ -96,8 +97,12 @@ class LessonCard extends StatelessWidget {
                         style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurface.withAlpha(150)),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
                       if (lesson.trainerName != null) ...[
-                        const SizedBox(width: 10),
                         Icon(Icons.person_outline,
                             size: 14,
                             color: theme.colorScheme.onSurface.withAlpha(150)),
@@ -107,8 +112,8 @@ class LessonCard extends StatelessWidget {
                           style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurface.withAlpha(150)),
                         ),
+                        const SizedBox(width: 10),
                       ],
-                      const SizedBox(width: 10),
                       Icon(Icons.people_outline,
                           size: 14,
                           color: theme.colorScheme.onSurface.withAlpha(150)),
@@ -164,8 +169,8 @@ class LessonCard extends StatelessWidget {
       );
     }
 
-    // Non iscritto al corso → bottone prova
-    if (!isEnrolled) {
+    // Nessun piano attivo → bottone prova
+    if (!hasActivePlan) {
       return OutlinedButton(
         onPressed: isFull ? null : onBookTrial,
         style: OutlinedButton.styleFrom(

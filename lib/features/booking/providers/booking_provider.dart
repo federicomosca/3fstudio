@@ -36,6 +36,28 @@ final userPendingTrialLessonsProvider = FutureProvider<Set<String>>((ref) async 
       .toSet();
 });
 
+/// True se l'utente ha almeno un piano attivo con crediti/unlimited valido.
+final hasActivePlanProvider = FutureProvider<bool>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return false;
+
+  final client = ref.watch(supabaseClientProvider);
+  final now = DateTime.now().toUtc().toIso8601String();
+
+  final plans = await client
+      .from('user_plans')
+      .select('credits_remaining, plans!inner(type)')
+      .eq('user_id', user.id)
+      .or('expires_at.is.null,expires_at.gte.$now');
+
+  return (plans as List).cast<Map<String, dynamic>>().any((p) {
+    final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
+    if (type == 'unlimited') return true;
+    final credits = p['credits_remaining'] as int?;
+    return credits != null && credits > 0;
+  });
+});
+
 // Set di course_id per cui l'utente ha almeno una prenotazione confirmed/attended
 // → determina se l'utente è "iscritto" a quel corso
 final userEnrolledCourseIdsProvider = FutureProvider<Set<String>>((ref) async {
@@ -78,16 +100,13 @@ class BookingNotifier extends AsyncNotifier<void> {
         .from('user_plans')
         .select('credits_remaining, course_id, plans!inner(type)')
         .eq('user_id', user.id)
-        .eq('status', 'active')
         .or('expires_at.is.null,expires_at.gte.$now');
 
     final plans = (plansData as List).cast<Map<String, dynamic>>();
     final hasValidPlan = plans.any((p) {
       final planCourseId = p['course_id'] as String?;
-      // Exclude plans scoped to a different course
       if (planCourseId != null && planCourseId != courseId) return false;
-      final type =
-          (p['plans'] as Map<String, dynamic>)['type'] as String;
+      final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
       if (type == 'unlimited') return true;
       final credits = p['credits_remaining'] as int?;
       return credits != null && credits > 0;
@@ -168,7 +187,6 @@ class BookingNotifier extends AsyncNotifier<void> {
         .from('user_plans')
         .select('id, credits_remaining, course_id, plans!inner(type)')
         .eq('user_id', user.id)
-        .eq('status', 'active')
         .or('expires_at.is.null,expires_at.gte.$now');
 
     final plans = (plansData as List).cast<Map<String, dynamic>>();

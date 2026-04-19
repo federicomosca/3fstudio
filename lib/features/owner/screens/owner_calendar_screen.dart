@@ -7,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
+import '../providers/pending_lessons_count_provider.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
@@ -48,30 +49,6 @@ final _ownerLessonsForDayProvider =
       .toList();
 });
 
-final _pendingLessonsCountProvider = FutureProvider<int>((ref) async {
-  final studioId = ref.watch(currentStudioIdProvider);
-  if (studioId == null) return 0;
-  final client = ref.watch(supabaseClientProvider);
-
-  // Proposte di lezione in attesa
-  final lessonData = await client
-      .from('lessons')
-      .select('id, courses!inner(studio_id)')
-      .eq('status', 'pending')
-      .eq('courses.studio_id', studioId);
-  final lessonCount = (lessonData as List).length;
-
-  // Prenotazioni prova in attesa (filtrate per studio via RLS + lesson join)
-  final trialData = await client
-      .from('bookings')
-      .select('id, lessons!inner(courses!inner(studio_id))')
-      .eq('status', 'pending')
-      .eq('is_trial', true)
-      .eq('lessons.courses.studio_id', studioId);
-  final trialCount = (trialData as List).length;
-
-  return lessonCount + trialCount;
-});
 
 // ── Rooms & Courses for creation ──────────────────────────────────────────────
 
@@ -133,7 +110,7 @@ class OwnerCalendarScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedDay = ref.watch(_ownerSelectedDayProvider);
     final lessons = ref.watch(_ownerLessonsForDayProvider(selectedDay));
-    final pendingCount = ref.watch(_pendingLessonsCountProvider);
+    final pendingCount = ref.watch(pendingLessonsCountProvider);
     final timeFmt = DateFormat('HH:mm');
     final dayFmt = DateFormat('EEEE d MMMM', 'it_IT');
     final theme = Theme.of(context);
@@ -290,6 +267,7 @@ class OwnerCalendarScreen extends ConsumerWidget {
                                 .toLocal();
                         final status = l['status'] as String? ?? 'active';
                         final isPending = status == 'pending';
+                        final isDeletePending = status == 'delete_pending';
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -332,6 +310,26 @@ class OwnerCalendarScreen extends ConsumerWidget {
                                           fontWeight: FontWeight.bold),
                                     ),
                                   ),
+                                if (isDeletePending)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withAlpha(40),
+                                      borderRadius:
+                                          BorderRadius.circular(4),
+                                      border: Border.all(
+                                          color: Colors.red.withAlpha(120)),
+                                    ),
+                                    child: const Text(
+                                      'Elim. richiesta',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.red,
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
                               ],
                             ),
                             subtitle: Text('$count/$cap iscritti'),
@@ -356,7 +354,27 @@ class OwnerCalendarScreen extends ConsumerWidget {
                                       ),
                                     ],
                                   )
-                                : PopupMenuButton<String>(
+                                : isDeletePending
+                                    ? Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: Icon(Icons.delete_forever,
+                                                color: theme.colorScheme.error),
+                                            tooltip: 'Approva eliminazione',
+                                            onPressed: () => _approveDeleteLesson(
+                                                context, ref, l),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.restore,
+                                                color: Color(0xFF66BB6A)),
+                                            tooltip: 'Rifiuta eliminazione',
+                                            onPressed: () => _rejectDeleteLesson(
+                                                context, ref, l['id'] as String),
+                                          ),
+                                        ],
+                                      )
+                                    : PopupMenuButton<String>(
                                     onSelected: (v) {
                                       if (v == 'presenze') {
                                         context.push('/owner/roster/${l['id']}');
@@ -404,7 +422,7 @@ class OwnerCalendarScreen extends ConsumerWidget {
         .update({'status': 'active'})
         .eq('id', lessonId);
     ref.invalidate(_ownerLessonsForDayProvider);
-    ref.invalidate(_pendingLessonsCountProvider);
+    ref.invalidate(pendingLessonsCountProvider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -457,12 +475,90 @@ class OwnerCalendarScreen extends ConsumerWidget {
         'review_note': noteCtrl.text.trim(),
     }).eq('id', lessonId);
     ref.invalidate(_ownerLessonsForDayProvider);
-    ref.invalidate(_pendingLessonsCountProvider);
+    ref.invalidate(pendingLessonsCountProvider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Lezione rifiutata'),
           backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _approveDeleteLesson(
+      BuildContext context, WidgetRef ref, Map<String, dynamic> lesson) async {
+    final client = ref.read(supabaseClientProvider);
+    final lessonId = lesson['id'] as String;
+
+    final result = await client
+        .from('bookings')
+        .select('id')
+        .eq('lesson_id', lessonId)
+        .count();
+    final count = result.count;
+
+    if (!context.mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Approva eliminazione'),
+        content: Text(
+          count > 0
+              ? 'Ci sono $count prenotazioni per questa lezione. '
+                  'Eliminandola verranno cancellate anche le prenotazioni. Continuare?'
+              : 'Confermi l\'eliminazione di questa lezione?',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annulla')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Elimina',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      if (count > 0) {
+        await client.from('bookings').delete().eq('lesson_id', lessonId);
+      }
+      await client.from('lessons').delete().eq('id', lessonId);
+      ref.invalidate(_ownerLessonsForDayProvider);
+      ref.invalidate(pendingLessonsCountProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Lezione eliminata'),
+              backgroundColor: Color(0xFF66BB6A)),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Errore: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  Future<void> _rejectDeleteLesson(
+      BuildContext context, WidgetRef ref, String lessonId) async {
+    final client = ref.read(supabaseClientProvider);
+    await client
+        .from('lessons')
+        .update({'status': 'active'})
+        .eq('id', lessonId);
+    ref.invalidate(_ownerLessonsForDayProvider);
+    ref.invalidate(pendingLessonsCountProvider);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Eliminazione rifiutata — lezione ripristinata'),
+          backgroundColor: Color(0xFF66BB6A),
         ),
       );
     }
@@ -553,10 +649,10 @@ final _allPendingLessonsProvider =
   final data = await client
       .from('lessons')
       .select(
-          'id, starts_at, ends_at, capacity, review_note, '
+          'id, starts_at, ends_at, capacity, review_note, status, '
           'courses!inner(id, name, studio_id), '
           'users!proposed_by(full_name)')
-      .eq('status', 'pending')
+      .inFilter('status', ['pending', 'delete_pending'])
       .eq('courses.studio_id', studioId)
       .order('starts_at');
 
@@ -630,8 +726,8 @@ class PendingLessonsScreen extends ConsumerWidget {
         body: TabBarView(
           children: [
             _LessonProposalsTab(
-              onApprove: (ctx, r, id) => _approveLesson(ctx, r, id),
-              onReject: (ctx, r, id) => _rejectLesson(ctx, r, id),
+              onApprove: (ctx, r, id, isDelete) => _approveLesson(ctx, r, id, isDelete: isDelete),
+              onReject: (ctx, r, id, isDelete) => _rejectLesson(ctx, r, id, isDelete: isDelete),
             ),
             _TrialBookingsTab(
               onApprove: (ctx, r, id) => _approveTrial(ctx, r, id),
@@ -644,26 +740,83 @@ class PendingLessonsScreen extends ConsumerWidget {
   }
 
   Future<void> _approveLesson(
-      BuildContext context, WidgetRef ref, String lessonId) async {
+      BuildContext context, WidgetRef ref, String lessonId,
+      {required bool isDelete}) async {
     final client = ref.read(supabaseClientProvider);
-    await client
-        .from('lessons')
-        .update({'status': 'active'})
-        .eq('id', lessonId);
+    if (isDelete) {
+      final result = await client
+          .from('bookings')
+          .select('id')
+          .eq('lesson_id', lessonId)
+          .count();
+      final count = result.count;
+      if (!context.mounted) return;
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Approva eliminazione'),
+          content: Text(
+            count > 0
+                ? 'Ci sono $count prenotazioni per questa lezione. '
+                    'Eliminandola verranno cancellate anche le prenotazioni. Continuare?'
+                : "Confermi l'eliminazione di questa lezione?",
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annulla')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Elimina',
+                    style: TextStyle(color: Colors.red))),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+      if (count > 0) {
+        await client.from('bookings').delete().eq('lesson_id', lessonId);
+      }
+      await client.from('lessons').delete().eq('id', lessonId);
+    } else {
+      await client
+          .from('lessons')
+          .update({'status': 'active'})
+          .eq('id', lessonId);
+    }
     ref.invalidate(_allPendingLessonsProvider);
-    ref.invalidate(_pendingLessonsCountProvider);
+    ref.invalidate(pendingLessonsCountProvider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lezione approvata ✓'),
-          backgroundColor: Color(0xFF66BB6A),
+        SnackBar(
+          content: Text(isDelete ? 'Lezione eliminata ✓' : 'Lezione approvata ✓'),
+          backgroundColor: const Color(0xFF66BB6A),
         ),
       );
     }
   }
 
   Future<void> _rejectLesson(
-      BuildContext context, WidgetRef ref, String lessonId) async {
+      BuildContext context, WidgetRef ref, String lessonId,
+      {required bool isDelete}) async {
+    final client = ref.read(supabaseClientProvider);
+    if (isDelete) {
+      // Reject deletion request → restore to active
+      await client
+          .from('lessons')
+          .update({'status': 'active'})
+          .eq('id', lessonId);
+      ref.invalidate(_allPendingLessonsProvider);
+      ref.invalidate(pendingLessonsCountProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Eliminazione rifiutata — lezione ripristinata'),
+            backgroundColor: Color(0xFF66BB6A),
+          ),
+        );
+      }
+      return;
+    }
     final noteCtrl = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
@@ -697,14 +850,13 @@ class PendingLessonsScreen extends ConsumerWidget {
       ),
     );
     if (confirm != true) return;
-    final client = ref.read(supabaseClientProvider);
     await client.from('lessons').update({
       'status': 'rejected',
       if (noteCtrl.text.trim().isNotEmpty)
         'review_note': noteCtrl.text.trim(),
     }).eq('id', lessonId);
     ref.invalidate(_allPendingLessonsProvider);
-    ref.invalidate(_pendingLessonsCountProvider);
+    ref.invalidate(pendingLessonsCountProvider);
   }
 
   Future<void> _approveTrial(
@@ -715,7 +867,7 @@ class PendingLessonsScreen extends ConsumerWidget {
         .update({'status': 'confirmed'})
         .eq('id', bookingId);
     ref.invalidate(_allPendingTrialBookingsProvider);
-    ref.invalidate(_pendingLessonsCountProvider);
+    ref.invalidate(pendingLessonsCountProvider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -753,15 +905,15 @@ class PendingLessonsScreen extends ConsumerWidget {
         .update({'status': 'cancelled'})
         .eq('id', bookingId);
     ref.invalidate(_allPendingTrialBookingsProvider);
-    ref.invalidate(_pendingLessonsCountProvider);
+    ref.invalidate(pendingLessonsCountProvider);
   }
 }
 
 // ── Tab: proposte di lezione ──────────────────────────────────────────────────
 
 class _LessonProposalsTab extends ConsumerWidget {
-  final Future<void> Function(BuildContext, WidgetRef, String) onApprove;
-  final Future<void> Function(BuildContext, WidgetRef, String) onReject;
+  final Future<void> Function(BuildContext, WidgetRef, String, bool) onApprove;
+  final Future<void> Function(BuildContext, WidgetRef, String, bool) onReject;
 
   const _LessonProposalsTab(
       {required this.onApprove, required this.onReject});
@@ -803,13 +955,21 @@ class _LessonProposalsTab extends ConsumerWidget {
                 final start =
                     DateTime.parse(l['starts_at'] as String).toLocal();
                 final cap = l['capacity'] as int? ?? 0;
+                final isDelete = l['status'] == 'delete_pending';
+                final proposerLabel = proposer != null
+                    ? ' · Da: ${proposer['full_name']}'
+                    : '';
                 return _PendingCard(
                   title: course['name'] as String,
                   subtitle: dateFmt.format(start),
-                  detail: 'Capacità: $cap posti'
-                      '${proposer != null ? ' · Proposta da: ${proposer['full_name']}' : ''}',
-                  onApprove: () => onApprove(context, ref, l['id'] as String),
-                  onReject: () => onReject(context, ref, l['id'] as String),
+                  detail: isDelete
+                      ? 'Richiesta eliminazione$proposerLabel'
+                      : 'Capacità: $cap posti$proposerLabel',
+                  approveLabel: isDelete ? 'Elimina' : 'Approva',
+                  rejectLabel: isDelete ? 'Mantieni' : 'Rifiuta',
+                  approveDestructive: isDelete,
+                  onApprove: () => onApprove(context, ref, l['id'] as String, isDelete),
+                  onReject: () => onReject(context, ref, l['id'] as String, isDelete),
                 );
               },
             ),
@@ -886,6 +1046,9 @@ class _PendingCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final String? detail;
+  final String approveLabel;
+  final String rejectLabel;
+  final bool approveDestructive;
   final VoidCallback onApprove;
   final VoidCallback onReject;
 
@@ -893,6 +1056,9 @@ class _PendingCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.detail,
+    this.approveLabel = 'Approva',
+    this.rejectLabel = 'Rifiuta',
+    this.approveDestructive = false,
     required this.onApprove,
     required this.onReject,
   });
@@ -949,13 +1115,21 @@ class _PendingCard extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  icon: const Icon(Icons.check,
-                      size: 16, color: Color(0xFF66BB6A)),
-                  label: const Text('Approva',
-                      style: TextStyle(color: Color(0xFF66BB6A))),
+                  icon: Icon(approveDestructive ? Icons.delete_forever : Icons.check,
+                      size: 16,
+                      color: approveDestructive
+                          ? theme.colorScheme.error
+                          : const Color(0xFF66BB6A)),
+                  label: Text(approveLabel,
+                      style: TextStyle(
+                          color: approveDestructive
+                              ? theme.colorScheme.error
+                              : const Color(0xFF66BB6A))),
                   style: OutlinedButton.styleFrom(
-                    side:
-                        const BorderSide(color: Color(0xFF66BB6A)),
+                    side: BorderSide(
+                        color: approveDestructive
+                            ? theme.colorScheme.error
+                            : const Color(0xFF66BB6A)),
                   ),
                   onPressed: onApprove,
                 ),
@@ -963,14 +1137,21 @@ class _PendingCard extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton.icon(
-                  icon: Icon(Icons.close,
-                      size: 16, color: theme.colorScheme.error),
-                  label: Text('Rifiuta',
-                      style:
-                          TextStyle(color: theme.colorScheme.error)),
+                  icon: Icon(approveDestructive ? Icons.restore : Icons.close,
+                      size: 16,
+                      color: approveDestructive
+                          ? const Color(0xFF66BB6A)
+                          : theme.colorScheme.error),
+                  label: Text(rejectLabel,
+                      style: TextStyle(
+                          color: approveDestructive
+                              ? const Color(0xFF66BB6A)
+                              : theme.colorScheme.error)),
                   style: OutlinedButton.styleFrom(
-                    side:
-                        BorderSide(color: theme.colorScheme.error),
+                    side: BorderSide(
+                        color: approveDestructive
+                            ? const Color(0xFF66BB6A)
+                            : theme.colorScheme.error),
                   ),
                   onPressed: onReject,
                 ),
@@ -1006,10 +1187,15 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
   late DateTime _startTime;
   late DateTime _endTime;
   final _capCtrl = TextEditingController();
-  int? _maxCapacity; // capienza massima dello spazio selezionato
+  int? _maxCapacity;
   bool _loading = false;
   String? _error;
   Set<String> _occupiedRoomIds = {};
+
+  // Recurring
+  bool _isRecurring = false;
+  final Set<int> _recurDays = {}; // 1=Mon … 7=Sun (ISO weekday)
+  late DateTime _recurUntil;
 
   @override
   void initState() {
@@ -1017,6 +1203,7 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
     final d = widget.initialDate;
     _startTime = DateTime(d.year, d.month, d.day, 9, 0);
     _endTime = DateTime(d.year, d.month, d.day, 10, 0);
+    _recurUntil = d.add(const Duration(days: 28));
     _capCtrl.text = '10';
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadOccupiedRooms());
   }
@@ -1075,6 +1262,27 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
     _loadOccupiedRooms();
   }
 
+  List<DateTime> _occurrences() {
+    final dates = <DateTime>[];
+    if (!_isRecurring || _recurDays.isEmpty) {
+      dates.add(_startTime);
+    } else {
+      var cursor = DateTime(
+          widget.initialDate.year, widget.initialDate.month, widget.initialDate.day);
+      final until = DateTime(_recurUntil.year, _recurUntil.month, _recurUntil.day, 23, 59);
+      while (!cursor.isAfter(until)) {
+        if (_recurDays.contains(cursor.weekday)) {
+          dates.add(DateTime(
+            cursor.year, cursor.month, cursor.day,
+            _startTime.hour, _startTime.minute,
+          ));
+        }
+        cursor = cursor.add(const Duration(days: 1));
+      }
+    }
+    return dates;
+  }
+
   Future<void> _submit() async {
     if (_courseId == null) {
       setState(() => _error = 'Seleziona un corso');
@@ -1085,7 +1293,11 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
       return;
     }
     if (!_endTime.isAfter(_startTime)) {
-      setState(() => _error = 'L\'orario di fine deve essere dopo l\'inizio');
+      setState(() => _error = "L'orario di fine deve essere dopo l'inizio");
+      return;
+    }
+    if (_isRecurring && _recurDays.isEmpty) {
+      setState(() => _error = 'Seleziona almeno un giorno della settimana');
       return;
     }
     final capacity = int.tryParse(_capCtrl.text.trim()) ?? 0;
@@ -1096,40 +1308,49 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
     setState(() { _loading = true; _error = null; });
     try {
       final client = ref.read(supabaseClientProvider);
-      final startsUtc = _startTime.toUtc().toIso8601String();
-      final endsUtc   = _endTime.toUtc().toIso8601String();
+      final duration = _endTime.difference(_startTime);
+      final occurrences = _occurrences();
 
       if (_roomId != null) {
-        final conflicts = await client
-            .from('lessons')
-            .select('id')
-            .eq('room_id', _roomId!)
-            .neq('status', 'rejected')
-            .lt('starts_at', endsUtc)
-            .gt('ends_at', startsUtc);
-        if ((conflicts as List).isNotEmpty) {
-          throw Exception('Lo spazio è già occupato in questo orario');
+        for (final start in occurrences) {
+          final end = start.add(duration);
+          final conflicts = await client
+              .from('lessons')
+              .select('id')
+              .eq('room_id', _roomId!)
+              .neq('status', 'rejected')
+              .lt('starts_at', end.toUtc().toIso8601String())
+              .gt('ends_at', start.toUtc().toIso8601String());
+          if ((conflicts as List).isNotEmpty) {
+            final dateFmt = DateFormat('d MMM', 'it_IT');
+            throw Exception('Conflitto sala il ${dateFmt.format(start)}');
+          }
         }
       }
 
-      await client.from('lessons').insert({
-        'course_id':  _courseId,
-        'trainer_id': _trainerId,
-        'starts_at':  startsUtc,
-        'ends_at':    endsUtc,
-        'capacity':   int.tryParse(_capCtrl.text.trim()) ?? 10,
-        if (_roomId != null) 'room_id': _roomId,
-        'status':     'active',
-      });
+      final rows = occurrences.map((start) {
+        final end = start.add(duration);
+        return {
+          'course_id':  _courseId,
+          'trainer_id': _trainerId,
+          'starts_at':  start.toUtc().toIso8601String(),
+          'ends_at':    end.toUtc().toIso8601String(),
+          'capacity':   capacity == 0 ? 10 : capacity,
+          if (_roomId != null) 'room_id': _roomId,
+          'status':     'active',
+        };
+      }).toList();
+
+      await client.from('lessons').insert(rows);
 
       if (mounted) {
         Navigator.of(context).pop();
         widget.onCreated();
+        final msg = occurrences.length == 1
+            ? 'Lezione creata!'
+            : '${occurrences.length} lezioni create!';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Lezione creata!'),
-            backgroundColor: Color(0xFF66BB6A),
-          ),
+          SnackBar(content: Text(msg), backgroundColor: const Color(0xFF66BB6A)),
         );
       }
     } catch (e) {
@@ -1332,6 +1553,37 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+
+            // Ricorrenza
+            _RecurringSection(
+              isRecurring: _isRecurring,
+              recurDays: _recurDays,
+              recurUntil: _recurUntil,
+              onToggle: (v) => setState(() {
+                _isRecurring = v;
+                if (v && _recurDays.isEmpty) {
+                  _recurDays.add(widget.initialDate.weekday);
+                }
+              }),
+              onDayToggled: (day) => setState(() {
+                if (_recurDays.contains(day)) {
+                  _recurDays.remove(day);
+                } else {
+                  _recurDays.add(day);
+                }
+              }),
+              onPickUntil: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _recurUntil,
+                  firstDate: widget.initialDate,
+                  lastDate: widget.initialDate.add(const Duration(days: 365)),
+                );
+                if (picked != null) setState(() => _recurUntil = picked);
+              },
+              occurrenceCount: _isRecurring ? _occurrences().length : null,
+            ),
 
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -1358,12 +1610,156 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Crea lezione'),
+                    : Text(_isRecurring && _recurDays.isNotEmpty
+                        ? 'Crea ${_occurrences().length} lezioni'
+                        : 'Crea lezione'),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Recurring section ─────────────────────────────────────────────────────────
+
+class _RecurringSection extends StatelessWidget {
+  final bool isRecurring;
+  final Set<int> recurDays;
+  final DateTime recurUntil;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<int> onDayToggled;
+  final VoidCallback onPickUntil;
+  final int? occurrenceCount;
+
+  const _RecurringSection({
+    required this.isRecurring,
+    required this.recurDays,
+    required this.recurUntil,
+    required this.onToggle,
+    required this.onDayToggled,
+    required this.onPickUntil,
+    this.occurrenceCount,
+  });
+
+  static const _dayLabels = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dateFmt = DateFormat('d MMM yyyy', 'it_IT');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Lezione ricorrente',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+          subtitle: Text(
+            'Crea più lezioni automaticamente',
+            style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurface.withAlpha(150)),
+          ),
+          value: isRecurring,
+          onChanged: onToggle,
+        ),
+        if (isRecurring) ...[
+          const SizedBox(height: 8),
+          Text('Giorni della settimana',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface.withAlpha(180))),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(7, (i) {
+              final day = i + 1;
+              final selected = recurDays.contains(day);
+              return GestureDetector(
+                onTap: () => onDayToggled(day),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected ? AppTheme.lime : Colors.transparent,
+                    border: Border.all(
+                      color: selected
+                          ? AppTheme.lime
+                          : theme.colorScheme.outline,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      _dayLabels[i],
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: selected
+                            ? AppTheme.charcoal
+                            : theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: onPickUntil,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.colorScheme.outline),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.event_outlined,
+                      size: 18,
+                      color: theme.colorScheme.onSurface.withAlpha(150)),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Ripeti fino al',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color:
+                                  theme.colorScheme.onSurface.withAlpha(150))),
+                      Text(dateFmt.format(recurUntil),
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const Spacer(),
+                  if (occurrenceCount != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppTheme.lime.withAlpha(40),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '$occurrenceCount lezioni',
+                        style: const TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

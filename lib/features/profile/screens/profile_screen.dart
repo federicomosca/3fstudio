@@ -479,103 +479,327 @@ class _EditForm extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// CLIENT — piano + prossime prenotazioni
+// CLIENT — piano + prossime prenotazioni + profilo modificabile
 // ══════════════════════════════════════════════════════════════════════════════
 
-class _ClientProfileScreen extends ConsumerWidget {
+class _ClientProfileScreen extends ConsumerStatefulWidget {
   const _ClientProfileScreen();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user        = ref.watch(currentUserProvider);
-    final displayName = user?.userMetadata?['display_name'] as String? ?? 'Utente';
-    final email       = user?.email ?? '';
-    final theme       = Theme.of(context);
+  ConsumerState<_ClientProfileScreen> createState() =>
+      _ClientProfileScreenState();
+}
+
+class _ClientProfileScreenState extends ConsumerState<_ClientProfileScreen> {
+  bool _editing = false;
+
+  final _nameCtrl  = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  XFile?     _pickedXFile;
+  Uint8List? _pickedBytes;
+  bool       _saving = false;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    super.dispose();
+  }
+
+  void _startEdit(UserProfile profile) {
+    _nameCtrl.text  = profile.fullName;
+    _phoneCtrl.text = profile.phone ?? '';
+    _pickedXFile    = null;
+    _pickedBytes    = null;
+    setState(() => _editing = true);
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final xfile  = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 800, maxHeight: 800,
+      imageQuality: 85,
+    );
+    if (xfile != null) {
+      final bytes = await xfile.readAsBytes();
+      setState(() {
+        _pickedXFile = xfile;
+        _pickedBytes = bytes;
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    final current = ref.read(myProfileProvider).asData?.value;
+    if (current == null) return;
+
+    setState(() => _saving = true);
+    try {
+      String? newAvatarUrl = current.avatarUrl;
+      if (_pickedXFile != null) {
+        newAvatarUrl =
+            await ref.read(myProfileProvider.notifier).uploadAvatar(_pickedXFile!);
+      }
+
+      final updated = current.copyWith(
+        fullName:  _nameCtrl.text.trim(),
+        phone:     _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+        avatarUrl: newAvatarUrl,
+      );
+
+      await ref.read(myProfileProvider.notifier).save(updated);
+
+      if (mounted) setState(() => _editing = false);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore nel salvataggio: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profileAsync = ref.watch(myProfileProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profilo')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Avatar + nome
-          Center(
-            child: CircleAvatar(
-              radius: 40,
-              backgroundColor: AppTheme.charcoal,
-              child: Text(
-                displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
+      appBar: AppBar(
+        title: Text(_editing ? 'Modifica profilo' : 'Profilo'),
+        actions: [
+          if (!_editing)
+            profileAsync.whenOrNull(
+              data: (p) => p != null
+                  ? IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'Modifica',
+                      onPressed: () => _startEdit(p),
+                    )
+                  : null,
+            ) ?? const SizedBox.shrink(),
+          if (_editing) ...[
+            TextButton(
+              onPressed: _saving ? null : () => setState(() => _editing = false),
+              child: const Text('Annulla',
+                  style: TextStyle(color: Colors.white70)),
             ),
-          ),
-          const SizedBox(height: 12),
-          Center(
-            child: Text(displayName,
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-          ),
-          Center(
-            child: Text(email,
-                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface.withAlpha(180))),
-          ),
-          const SizedBox(height: 28),
-
-          _SectionTitle('Piano attivo'),
-          const SizedBox(height: 8),
-          ref.watch(activePlanProvider).when(
-                data: (plan) => plan == null
-                    ? _EmptyCard(text: 'Nessun piano attivo')
-                    : _PlanCard(plan: plan),
-                loading: () => const _LoadingCard(),
-                error:   (e, _) => _EmptyCard(text: 'Errore nel caricamento'),
-              ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () => context.go('/client/plans'),
-              icon: const Icon(Icons.card_membership_outlined, size: 18),
-              label: const Text('Vedi piani disponibili'),
+            TextButton(
+              onPressed: _saving ? null : _save,
+              child: _saving
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Text('Salva',
+                      style: TextStyle(
+                          color: AppTheme.lime, fontWeight: FontWeight.w800)),
             ),
-          ),
-          const SizedBox(height: 24),
-
-          _ThemeToggleTile(ref: ref),
-          const SizedBox(height: 16),
-          const _AccountSettingsSection(),
-
-          ListTile(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            tileColor: Theme.of(context).colorScheme.errorContainer.withAlpha(80),
-            leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
-            title: Text('Esci',
-                style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontWeight: FontWeight.w600)),
-            onTap: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Esci'),
-                  content: const Text('Vuoi disconnetterti?'),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Annulla')),
-                    TextButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: Text('Esci',
-                  style: TextStyle(color: Theme.of(ctx).colorScheme.error))),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                await ref.read(authNotifierProvider.notifier).signOut();
-              }
-            },
-          ),
-          const SizedBox(height: 16),
+          ],
         ],
       ),
+      body: profileAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error:   (e, _) => Center(child: Text('Errore: $e')),
+        data:    (profile) => profile == null
+            ? const Center(child: Text('Profilo non trovato'))
+            : _editing
+                ? _ClientEditForm(
+                    profile:     profile,
+                    nameCtrl:    _nameCtrl,
+                    phoneCtrl:   _phoneCtrl,
+                    pickedBytes: _pickedBytes,
+                    onPickImage: _pickImage,
+                  )
+                : _ClientView(
+                    profile: profile,
+                    onEdit:  () => _startEdit(profile),
+                  ),
+      ),
+    );
+  }
+}
+
+// ── Vista client (read) ───────────────────────────────────────────────────────
+
+class _ClientView extends ConsumerWidget {
+  final UserProfile profile;
+  final VoidCallback onEdit;
+  const _ClientView({required this.profile, required this.onEdit});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Avatar + nome
+        Center(
+          child: UserAvatar(
+            avatarUrl: profile.avatarUrl,
+            name:      profile.fullName,
+            radius:    40,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          child: Text(profile.fullName,
+              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+        ),
+        Center(
+          child: Text(profile.email,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withAlpha(180))),
+        ),
+        if (profile.phone != null) ...[
+          const SizedBox(height: 4),
+          Center(
+            child: Text(profile.phone!,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withAlpha(180))),
+          ),
+        ],
+        const SizedBox(height: 28),
+
+        _SectionTitle('Piano attivo'),
+        const SizedBox(height: 8),
+        ref.watch(activePlanProvider).when(
+              data: (plan) => plan == null
+                  ? _EmptyCard(text: 'Nessun piano attivo')
+                  : _PlanCard(plan: plan),
+              loading: () => const _LoadingCard(),
+              error:   (e, _) => _EmptyCard(text: 'Errore nel caricamento'),
+            ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => context.go('/client/plans'),
+            icon: const Icon(Icons.card_membership_outlined, size: 18),
+            label: const Text('Vedi piani disponibili'),
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        _ThemeToggleTile(ref: ref),
+        const SizedBox(height: 16),
+        const _AccountSettingsSection(),
+
+        ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          tileColor: theme.colorScheme.errorContainer.withAlpha(80),
+          leading: Icon(Icons.logout, color: theme.colorScheme.error),
+          title: Text('Esci',
+              style: TextStyle(
+                  color: theme.colorScheme.error,
+                  fontWeight: FontWeight.w600)),
+          onTap: () async {
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Esci'),
+                content: const Text('Vuoi disconnetterti?'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Annulla')),
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: Text('Esci',
+                          style: TextStyle(color: Theme.of(ctx).colorScheme.error))),
+                ],
+              ),
+            );
+            if (confirm == true) {
+              await ref.read(authNotifierProvider.notifier).signOut();
+            }
+          },
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+}
+
+// ── Form di modifica client (nome, telefono, avatar) ──────────────────────────
+
+class _ClientEditForm extends StatelessWidget {
+  final UserProfile             profile;
+  final TextEditingController   nameCtrl;
+  final TextEditingController   phoneCtrl;
+  final Uint8List?              pickedBytes;
+  final VoidCallback            onPickImage;
+
+  const _ClientEditForm({
+    required this.profile,
+    required this.nameCtrl,
+    required this.phoneCtrl,
+    required this.pickedBytes,
+    required this.onPickImage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Center(
+          child: Stack(
+            children: [
+              pickedBytes != null
+                  ? CircleAvatar(
+                      radius: 52,
+                      backgroundImage: MemoryImage(pickedBytes!),
+                    )
+                  : UserAvatar(
+                      avatarUrl: profile.avatarUrl,
+                      name:      profile.fullName,
+                      radius:    52,
+                    ),
+              Positioned(
+                bottom: 0, right: 0,
+                child: GestureDetector(
+                  onTap: onPickImage,
+                  child: Container(
+                    width: 34, height: 34,
+                    decoration: BoxDecoration(
+                      color: AppTheme.lime,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 28),
+
+        _FieldLabel('Nome completo'),
+        const SizedBox(height: 6),
+        TextField(
+          controller: nameCtrl,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(prefixIcon: Icon(Icons.person_outlined)),
+        ),
+        const SizedBox(height: 16),
+
+        _FieldLabel('Telefono'),
+        const SizedBox(height: 6),
+        TextField(
+          controller: phoneCtrl,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(prefixIcon: Icon(Icons.phone_outlined)),
+        ),
+        const SizedBox(height: 32),
+      ],
     );
   }
 }

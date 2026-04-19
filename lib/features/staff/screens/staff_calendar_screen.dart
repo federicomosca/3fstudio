@@ -21,30 +21,21 @@ final _staffSelectedDayProvider =
 
 final _staffLessonsForDayProvider =
     FutureProvider.family<List<Map<String, dynamic>>, DateTime>((ref, date) async {
-  final user     = ref.watch(currentUserProvider);
   final studioId = ref.watch(currentStudioIdProvider);
-  if (user == null || studioId == null) return [];
+  if (studioId == null) return [];
 
-  final client      = ref.watch(supabaseClientProvider);
-  final ownedCourses = await ref.watch(_myOwnedCoursesProvider.future);
-  final start       = DateTime(date.year, date.month, date.day).toUtc().toIso8601String();
-  final end         = DateTime(date.year, date.month, date.day + 1).toUtc().toIso8601String();
+  final client = ref.watch(supabaseClientProvider);
+  final start  = DateTime(date.year, date.month, date.day).toUtc().toIso8601String();
+  final end    = DateTime(date.year, date.month, date.day + 1).toUtc().toIso8601String();
 
-  var query = client
+  final data = await client
       .from('lessons')
-      .select('id, starts_at, ends_at, capacity, status, courses(name, type, class_owner_id), bookings(count)')
+      .select('id, starts_at, ends_at, capacity, status, trainer_id, courses!inner(name, type, class_owner_id, studio_id), bookings(count)')
       .gte('starts_at', start)
-      .lt('starts_at', end);
+      .lt('starts_at', end)
+      .eq('courses.studio_id', studioId)
+      .order('starts_at');
 
-  if (ownedCourses.isNotEmpty) {
-    query = query.eq('courses.class_owner_id', user.id);
-  } else {
-    query = query.eq('trainer_id', user.id);
-  }
-
-  final data = await query.order('starts_at');
-  // Supabase returns courses:null for lessons that don't match the join filter
-  // instead of excluding them — filter them out explicitly.
   return (data as List)
       .where((l) => l['courses'] != null)
       .cast<Map<String, dynamic>>()
@@ -97,6 +88,7 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
     final lessons      = ref.watch(_staffLessonsForDayProvider(selectedDay));
     final ownedCourses = ref.watch(_myOwnedCoursesProvider).whenOrNull(data: (c) => c) ?? [];
     final isCourseOwner = ownedCourses.isNotEmpty;
+    final user         = ref.watch(currentUserProvider);
     final timeFmt      = DateFormat('HH:mm');
     final dayFmt      = DateFormat('EEEE d MMMM', 'it_IT');
     final theme       = Theme.of(context);
@@ -190,8 +182,8 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                       ),
                     )
                   : ListView.builder(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
+                      padding: EdgeInsets.fromLTRB(
+                          16, 8, 16, isCourseOwner ? 96 : 8),
                       itemCount: list.length,
                       itemBuilder: (context, i) {
                         final l       = list[i];
@@ -205,7 +197,12 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                         final cap       = l['capacity'] as int;
                         final start     = DateTime.parse(l['starts_at'] as String).toLocal();
                         final end       = DateTime.parse(l['ends_at'] as String).toLocal();
-                        final isPending = (l['status'] as String?) == 'pending';
+                        final status = (l['status'] as String?) ?? 'active';
+                        final isPending = status == 'pending';
+                        final isDeletePending = status == 'delete_pending';
+                        final isCourseOwnerForThis =
+                            course['class_owner_id'] == user?.id;
+                        final isMyLesson = l['trainer_id'] == user?.id || isCourseOwnerForThis;
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -242,15 +239,68 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                                       ),
                                     ),
                                   ),
+                                if (isDeletePending)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 8),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withAlpha(40),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: const Text(
+                                      'Elim. richiesta',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.red,
+                                      ),
+                                    ),
+                                  ),
                               ],
                             ),
                             subtitle: Text('$count/$cap iscritti'),
-                            trailing: isPending
+                            trailing: isPending || isDeletePending || !isMyLesson
                                 ? null
-                                : TextButton(
-                                    onPressed: () => context.push(
-                                        '/staff/roster/${l['id']}'),
-                                    child: const Text('Presenze'),
+                                : PopupMenuButton<String>(
+                                    onSelected: (v) {
+                                      if (v == 'presenze') {
+                                        context.push('/staff/roster/${l['id']}');
+                                      } else if (v == 'delete') {
+                                        _deleteDirectLesson(context, ref, l);
+                                      } else if (v == 'propose_delete') {
+                                        _proposeDeleteLesson(context, ref, l['id'] as String);
+                                      }
+                                    },
+                                    itemBuilder: (_) => [
+                                      const PopupMenuItem(
+                                        value: 'presenze',
+                                        child: ListTile(
+                                          leading: Icon(Icons.how_to_reg_outlined),
+                                          title: Text('Presenze'),
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                      if (isCourseOwnerForThis)
+                                        const PopupMenuItem(
+                                          value: 'delete',
+                                          child: ListTile(
+                                            leading: Icon(Icons.delete_outline,
+                                                color: Colors.red),
+                                            title: Text('Elimina',
+                                                style: TextStyle(color: Colors.red)),
+                                            contentPadding: EdgeInsets.zero,
+                                          ),
+                                        )
+                                      else
+                                        const PopupMenuItem(
+                                          value: 'propose_delete',
+                                          child: ListTile(
+                                            leading: Icon(Icons.delete_sweep_outlined),
+                                            title: Text('Proponi eliminazione'),
+                                            contentPadding: EdgeInsets.zero,
+                                          ),
+                                        ),
+                                    ],
                                   ),
                           ),
                         );
@@ -261,6 +311,97 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _proposeDeleteLesson(
+      BuildContext context, WidgetRef ref, String lessonId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Proponi eliminazione'),
+        content: const Text(
+            "Vuoi richiedere l'eliminazione di questa lezione? L'owner dovrà approvare."),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annulla')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Richiedi',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    final client = ref.read(supabaseClientProvider);
+    await client
+        .from('lessons')
+        .update({'status': 'delete_pending'})
+        .eq('id', lessonId);
+    ref.invalidate(_staffLessonsForDayProvider);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Richiesta di eliminazione inviata all'owner"),
+          backgroundColor: Color(0xFFFFB74D),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteDirectLesson(
+      BuildContext context, WidgetRef ref, Map<String, dynamic> lesson) async {
+    final client = ref.read(supabaseClientProvider);
+    final lessonId = lesson['id'] as String;
+
+    final result = await client
+        .from('bookings')
+        .select('id')
+        .eq('lesson_id', lessonId)
+        .count();
+    final count = result.count;
+
+    if (!context.mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Elimina lezione'),
+        content: Text(
+          count > 0
+              ? 'Ci sono $count prenotazioni per questa lezione. '
+                  'Eliminandola verranno cancellate anche le prenotazioni. Continuare?'
+              : 'Sei sicuro di voler eliminare questa lezione?',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annulla')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Elimina',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      if (count > 0) {
+        await client.from('bookings').delete().eq('lesson_id', lessonId);
+      }
+      await client.from('lessons').delete().eq('id', lessonId);
+      ref.invalidate(_staffLessonsForDayProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Lezione eliminata')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Errore: $e'), backgroundColor: Colors.red));
+      }
+    }
   }
 
   void _showProposeSheet(BuildContext context, DateTime date) {

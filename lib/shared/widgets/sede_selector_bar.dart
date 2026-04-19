@@ -85,17 +85,14 @@ class SedeSelectorBar extends ConsumerWidget {
                     color: Colors.white.withAlpha(hasMultiple ? 255 : 120),
                     size: 20,
                   ),
-                if (profileRoute != null) ...[
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => context.push(profileRoute!),
-                    child: const Padding(
-                      padding: EdgeInsets.only(left: 4),
-                      child: Icon(Icons.account_circle_outlined,
-                          color: Colors.white, size: 26),
-                    ),
+                if (profileRoute != null)
+                  IconButton(
+                    onPressed: () => context.push(profileRoute!),
+                    icon: const Icon(Icons.account_circle_outlined,
+                        color: Colors.white, size: 26),
+                    tooltip: 'Profilo',
+                    padding: EdgeInsets.zero,
                   ),
-                ],
               ],
             ),
           ),

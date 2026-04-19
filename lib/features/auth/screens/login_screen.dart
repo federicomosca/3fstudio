@@ -78,8 +78,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.charcoal,
-      body: Column(
-        children: [
+      body: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          reverse: true,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
           // ── Sezione brand (dark) ─────────────────────────────────────────
           Expanded(
             child: SafeArea(
@@ -151,7 +158,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               color: AppTheme.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             ),
-            padding: const EdgeInsets.fromLTRB(28, 32, 28, 32),
+            padding: EdgeInsets.fromLTRB(
+              28, 32, 28,
+              28 + MediaQuery.of(context).padding.bottom,
+            ),
             child: Form(
               key: _formKey,
               child: Column(
@@ -277,7 +287,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
           ), // Theme light
-        ],
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

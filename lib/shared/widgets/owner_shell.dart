@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/owner/providers/plan_requests_provider.dart';
+import '../../features/owner/providers/pending_lessons_count_provider.dart';
 import 'sede_selector_bar.dart';
 
 class OwnerShell extends ConsumerWidget {
@@ -25,9 +26,9 @@ class OwnerShell extends ConsumerWidget {
         onDestinationSelected: (i) => _nav(context, i),
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
+          NavigationDestination(
+            icon: _CalendarioBadge(selected: false),
+            selectedIcon: _CalendarioBadge(selected: true),
             label: 'Calendario',
           ),
           const NavigationDestination(
@@ -80,6 +81,31 @@ class OwnerShell extends ConsumerWidget {
       case 4: context.go('/owner/studio');
       case 5: context.go('/owner/notifications');
     }
+  }
+}
+
+// Badge sulla voce "Calendario" che mostra il numero di richieste lezioni/prova in attesa.
+class _CalendarioBadge extends ConsumerWidget {
+  final bool selected;
+  const _CalendarioBadge({required this.selected});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(pendingLessonsCountProvider).whenOrNull(
+              data: (n) => n,
+            ) ??
+        0;
+
+    final icon = Icon(
+      selected ? Icons.calendar_month : Icons.calendar_month_outlined,
+    );
+
+    if (count == 0) return icon;
+
+    return Badge(
+      label: Text('$count'),
+      child: icon,
+    );
   }
 }
 

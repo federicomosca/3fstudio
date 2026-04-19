@@ -509,12 +509,14 @@ class _CancelDeadlineBadgeState extends State<_CancelDeadlineBadge> {
         children: [
           Icon(Icons.timer_outlined, size: 14, color: color),
           const SizedBox(width: 6),
-          Text(
-            'Puoi cancellare senza perdere crediti: $timeLabel',
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+          Expanded(
+            child: Text(
+              'Puoi cancellare senza perdere crediti: $timeLabel',
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

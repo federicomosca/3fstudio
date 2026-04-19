@@ -157,6 +157,12 @@ class AppTheme {
       elevation:       2,
       extendedTextStyle: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
     ),
+    tabBarTheme: const TabBarThemeData(
+      labelColor:          white,
+      unselectedLabelColor: Color(0xFFB8CCE0),
+      indicatorColor:      blue,
+      dividerColor:        Colors.transparent,
+    ),
     chipTheme: const ChipThemeData(shape: StadiumBorder()),
     dividerTheme: const DividerThemeData(
       color:     Color(0xFFD0E0EE),
@@ -319,6 +325,12 @@ class AppTheme {
       foregroundColor: white,
       elevation:       2,
       extendedTextStyle: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+    ),
+    tabBarTheme: const TabBarThemeData(
+      labelColor:          white,
+      unselectedLabelColor: Color(0xFF4A6A8A),
+      indicatorColor:      blue,
+      dividerColor:        Colors.transparent,
     ),
     chipTheme: ChipThemeData(
       shape: const StadiumBorder(),

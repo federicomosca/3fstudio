@@ -7,7 +7,8 @@ import '../../features/auth/screens/login_screen.dart';
 import '../../features/profile/screens/public_profile_screen.dart';
 
 // Owner
-import '../../features/owner/screens/owner_calendar_screen.dart';
+import '../../features/owner/screens/owner_calendar_screen.dart'
+    show OwnerCalendarScreen, PendingLessonsScreen;
 import '../../features/owner/screens/courses_screen.dart';
 import '../../features/owner/screens/course_detail_screen.dart';
 import '../../features/owner/screens/rooms_screen.dart';
@@ -110,6 +111,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(path: '/owner/calendar',
               builder: (ctx, state) => const OwnerCalendarScreen()),
+          GoRoute(path: '/owner/requests',
+              builder: (ctx, state) => const PendingLessonsScreen()),
           GoRoute(path: '/owner/roster/:lessonId',
               builder: (ctx, state) => RosterScreen(
                     lessonId: state.pathParameters['lessonId']!)),

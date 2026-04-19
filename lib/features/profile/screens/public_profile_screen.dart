@@ -221,7 +221,7 @@ class _CourseTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final courseType = course['type'] as String? ?? 'group';
     return GestureDetector(
-      onTap: () => context.push('$routePrefix/courses/${course['id']}'),
+      onTap: () => context.go('$routePrefix/courses/${course['id']}'),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
