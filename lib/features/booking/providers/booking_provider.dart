@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../calendar/providers/lessons_provider.dart';
 
 // Set di lesson_id prenotati dall'utente corrente (status confirmed)
 final userBookingsProvider = FutureProvider<Set<String>>((ref) async {
@@ -127,6 +128,7 @@ class BookingNotifier extends AsyncNotifier<void> {
     );
 
     ref.invalidate(userBookingsProvider);
+    ref.invalidate(lessonsForDayProvider);
   }
 
   /// Richiede una lezione di prova per un corso a cui non si è iscritti.
@@ -163,6 +165,7 @@ class BookingNotifier extends AsyncNotifier<void> {
 
     ref.invalidate(userBookingsProvider);
     ref.invalidate(userPendingTrialLessonsProvider);
+    ref.invalidate(lessonsForDayProvider);
   }
 
   /// Cancella la prenotazione E scala un credito dal piano attivo.
@@ -228,6 +231,7 @@ class BookingNotifier extends AsyncNotifier<void> {
     }
 
     ref.invalidate(userBookingsProvider);
+    ref.invalidate(lessonsForDayProvider);
   }
 }
 

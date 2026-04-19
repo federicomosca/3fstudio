@@ -152,7 +152,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       isBooked: isBooked,
                       hasActivePlan: clientHasPlan,
                       isPendingTrial: isPendingTrial,
-                      bookedCount: 0,
+                      bookedCount: lesson.bookedCount,
                       onBook: () => _book(lesson.id),
                       onCancel: () => _cancel(lesson.id),
                       onBookTrial: () => _bookTrial(lesson),
