@@ -92,6 +92,7 @@ class StudioInfoScreen extends ConsumerWidget {
     final coursesAsync = ref.watch(_allCoursesProvider);
 
     final loc = GoRouterState.of(context).uri.path;
+    final isClient = loc.startsWith('/client');
     final courseBasePath = loc.startsWith('/owner')
         ? '/owner/courses'
         : loc.startsWith('/staff')
@@ -169,48 +170,50 @@ class StudioInfoScreen extends ConsumerWidget {
             ),
           ),
 
-          // ── Sale ────────────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-              child: _SectionTitle('Le nostre sale'),
+          // ── Sale (owner/staff only) ──────────────────────────────────
+          if (!isClient) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                child: _SectionTitle('Le nostre sale'),
+              ),
             ),
-          ),
 
-          roomsAsync.when(
-            loading: () => const SliverToBoxAdapter(
-                child: Center(child: CircularProgressIndicator())),
-            error: (e, _) => SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text('Errore: $e',
-                      style: const TextStyle(color: Colors.red)),
-                )),
-            data: (rooms) => rooms.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      child: Text(
-                        'Nessuna sala disponibile',
-                        style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withAlpha(150)),
+            roomsAsync.when(
+              loading: () => const SliverToBoxAdapter(
+                  child: Center(child: CircularProgressIndicator())),
+              error: (e, _) => SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text('Errore: $e',
+                        style: const TextStyle(color: Colors.red)),
+                  )),
+              data: (rooms) => rooms.isEmpty
+                  ? SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        child: Text(
+                          'Nessuna sala disponibile',
+                          style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withAlpha(150)),
+                        ),
+                      ),
+                    )
+                  : SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      sliver: SliverList.separated(
+                        itemCount: rooms.length,
+                        separatorBuilder: (context, i) =>
+                            const SizedBox(height: 8),
+                        itemBuilder: (context, i) => _RoomTile(room: rooms[i]),
                       ),
                     ),
-                  )
-                : SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverList.separated(
-                      itemCount: rooms.length,
-                      separatorBuilder: (context, i) =>
-                          const SizedBox(height: 8),
-                      itemBuilder: (context, i) => _RoomTile(room: rooms[i]),
-                    ),
-                  ),
-          ),
+            ),
+          ],
 
           // ── Corsi ───────────────────────────────────────────────────────
           SliverToBoxAdapter(
