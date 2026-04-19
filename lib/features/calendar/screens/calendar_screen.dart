@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
@@ -33,13 +32,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Calendario'),
-        actions: [
-          const CreditsChip(),
-          IconButton(
-            icon: const Icon(Icons.account_circle_outlined),
-            onPressed: () => context.push('/client/profile'),
-          ),
-        ],
+        actions: const [CreditsChip()],
       ),
       body: Column(
         children: [

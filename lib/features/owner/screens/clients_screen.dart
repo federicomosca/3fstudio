@@ -8,17 +8,19 @@ import '../../../core/providers/studio_provider.dart';
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
-final _clientsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final _clientsProvider =
+    FutureProvider.family<List<Map<String, dynamic>>, bool>((ref, isActive) async {
   final studioId = ref.watch(currentStudioIdProvider);
   if (studioId == null) return [];
   final client = ref.watch(supabaseClientProvider);
 
-  // Step 1: user_id dei clienti dello studio
+  // Step 1: user_id dei clienti dello studio (filtro is_active)
   final roles = await client
       .from('user_studio_roles')
       .select('user_id')
       .eq('studio_id', studioId)
-      .eq('role', 'client');
+      .eq('role', 'client')
+      .eq('is_active', isActive);
 
   final ids = (roles as List).map((r) => r['user_id'] as String).toList();
   if (ids.isEmpty) return [];
@@ -26,7 +28,7 @@ final _clientsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async 
   // Step 2: dati utente + piano attivo
   final data = await client
       .from('users')
-      .select('id, full_name, email, phone, user_plans(credits_remaining, expires_at, plans(name, type))')
+      .select('id, full_name, email, phone, user_plans(credits_remaining, expires_at, status, plans(name, type))')
       .inFilter('id', ids)
       .order('full_name');
 
@@ -35,37 +37,17 @@ final _clientsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async 
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-class ClientsScreen extends ConsumerWidget {
+class ClientsScreen extends ConsumerStatefulWidget {
   const ClientsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final clients = ref.watch(_clientsProvider);
+  ConsumerState<ClientsScreen> createState() => _ClientsScreenState();
+}
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Clienti')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddClientDialog(context, ref),
-        icon: const Icon(Icons.person_add_outlined),
-        label: const Text('Aggiungi'),
-      ),
-      body: clients.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-            child: Text('Errore: $e', style: const TextStyle(color: Colors.red))),
-        data: (list) => list.isEmpty
-            ? _EmptyClients(onAdd: () => _showAddClientDialog(context, ref))
-            : ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: list.length,
-                separatorBuilder: (context, i) => const SizedBox(height: 8),
-                itemBuilder: (context, i) => _ClientTile(client: list[i]),
-              ),
-      ),
-    );
-  }
+class _ClientsScreenState extends ConsumerState<ClientsScreen> {
+  bool _showArchived = false;
 
-  void _showAddClientDialog(BuildContext context, WidgetRef ref) {
+  void _showAddClientDialog() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -74,13 +56,105 @@ class ClientsScreen extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => _AddClientSheet(
-        onCreated: () => ref.invalidate(_clientsProvider),
+        onCreated: () => ref.invalidate(_clientsProvider(true)),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clients = ref.watch(_clientsProvider(!_showArchived));
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Clienti')),
+      floatingActionButton: _showArchived
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _showAddClientDialog,
+              icon: const Icon(Icons.person_add_outlined),
+              label: const Text('Aggiungi'),
+            ),
+      body: Column(
+        children: [
+          // ── Archive toggle ─────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(
+              children: [
+                FilterChip(
+                  label: const Text('Attivi'),
+                  selected: !_showArchived,
+                  onSelected: (_) => setState(() => _showArchived = false),
+                ),
+                const SizedBox(width: 8),
+                FilterChip(
+                  avatar: const Icon(Icons.archive_outlined, size: 16),
+                  label: const Text('Archiviati'),
+                  selected: _showArchived,
+                  onSelected: (_) => setState(() => _showArchived = true),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          // ── List ───────────────────────────────────────────────────────
+          Expanded(
+            child: clients.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                  child: Text('Errore: $e',
+                      style: const TextStyle(color: Colors.red))),
+              data: (list) => list.isEmpty
+                  ? _showArchived
+                      ? _EmptyArchive(label: 'Nessun cliente archiviato')
+                      : _EmptyClients(onAdd: _showAddClientDialog)
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: list.length,
+                      separatorBuilder: (context, i) =>
+                          const SizedBox(height: 8),
+                      itemBuilder: (context, i) => _ClientTile(
+                        client: list[i],
+                        isArchived: _showArchived,
+                        onReactivated: () {
+                          ref.invalidate(_clientsProvider(true));
+                          ref.invalidate(_clientsProvider(false));
+                        },
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// ── Empty state ───────────────────────────────────────────────────────────────
+// ── Empty states ──────────────────────────────────────────────────────────────
+
+class _EmptyArchive extends StatelessWidget {
+  final String label;
+  const _EmptyArchive({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.archive_outlined, size: 64,
+              color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
+          const SizedBox(height: 16),
+          Text(label,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+}
 
 class _EmptyClients extends StatelessWidget {
   final VoidCallback onAdd;
@@ -123,29 +197,89 @@ class _EmptyClients extends StatelessWidget {
 
 // ── Client tile ───────────────────────────────────────────────────────────────
 
-class _ClientTile extends StatelessWidget {
+class _ClientTile extends ConsumerWidget {
   final Map<String, dynamic> client;
-  const _ClientTile({required this.client});
+  final bool isArchived;
+  final VoidCallback? onReactivated;
+  const _ClientTile({
+    required this.client,
+    this.isArchived = false,
+    this.onReactivated,
+  });
+
+  Future<void> _reactivate(BuildContext context, WidgetRef ref) async {
+    final name     = client['full_name'] as String? ?? '—';
+    final studioId = ref.read(currentStudioIdProvider);
+    if (studioId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Riattiva cliente'),
+        content: Text('Riattivare $name?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Riattiva'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final db = ref.read(supabaseClientProvider);
+      await db
+          .from('user_studio_roles')
+          .update({'is_active': true})
+          .eq('user_id', client['id'] as String)
+          .eq('studio_id', studioId)
+          .eq('role', 'client');
+      onReactivated?.call();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final name  = client['full_name'] as String? ?? client['email'] as String? ?? '—';
     final phone = client['phone'] as String?;
 
-    final userPlans = client['user_plans'] as List?;
-    final plan      = userPlans?.isNotEmpty == true
-        ? userPlans!.first as Map<String, dynamic>
-        : null;
-    final planData   = plan?['plans'] as Map<String, dynamic>?;
-    final planName   = planData?['name'] as String?;
-    final planType   = planData?['type'] as String?;
-    final credits    = plan?['credits_remaining'] as int?;
-    final expiresAt  = plan?['expires_at'] as String?;
+    final allPlans = (client['user_plans'] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .where((p) => p['status'] != 'cancelled')
+        .toList();
+
+    final activePlan = allPlans
+        .where((p) => p['status'] == 'active')
+        .toList()
+        .firstOrNull;
+    final hasSuspendedOnly =
+        activePlan == null && allPlans.any((p) => p['status'] == 'suspended');
+
+    final plan      = activePlan;
+    final planData  = plan?['plans'] as Map<String, dynamic>?;
+    final planName  = planData?['name'] as String?;
+    final planType  = planData?['type'] as String?;
+    final credits   = plan?['credits_remaining'] as int?;
+    final expiresAt = plan?['expires_at'] as String?;
 
     String subtitle;
     Color subtitleColor = Theme.of(context).colorScheme.onSurface.withAlpha(180);
 
-    if (planName == null) {
+    if (hasSuspendedOnly) {
+      subtitle = 'Piano sospeso';
+      subtitleColor = Colors.orange.shade700;
+    } else if (planName == null) {
       subtitle = 'Nessun piano';
       subtitleColor = Colors.orange.shade700;
     } else if (planType == 'credits') {
@@ -167,28 +301,46 @@ class _ClientTile extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       tileColor: Theme.of(context).colorScheme.surface,
       leading: CircleAvatar(
-        backgroundColor: Theme.of(context).colorScheme.primary.withAlpha(20),
+        backgroundColor: Theme.of(context)
+            .colorScheme
+            .primary
+            .withAlpha(isArchived ? 10 : 20),
         child: Text(
           name.isNotEmpty ? name[0].toUpperCase() : '?',
           style: TextStyle(
-              color: Theme.of(context).colorScheme.primary,
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withAlpha(isArchived ? 120 : 255),
               fontWeight: FontWeight.bold),
         ),
       ),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+      title: Text(name,
+          style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: isArchived
+                  ? Theme.of(context).colorScheme.onSurface.withAlpha(150)
+                  : null)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(subtitle, style: TextStyle(color: subtitleColor, fontSize: 12)),
           if (phone != null)
             Text(phone,
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withAlpha(150), fontSize: 12)),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
+                    fontSize: 12)),
         ],
       ),
       isThreeLine: phone != null,
-      trailing: Icon(Icons.chevron_right,
-          color: Theme.of(context).colorScheme.onSurface.withAlpha(100)),
-      onTap: () => context.push('/owner/clients/${client['id']}'),
+      trailing: isArchived
+          ? TextButton(
+              onPressed: () => _reactivate(context, ref),
+              child: const Text('Riattiva'),
+            )
+          : Icon(Icons.chevron_right,
+              color: Theme.of(context).colorScheme.onSurface.withAlpha(100)),
+      onTap: isArchived ? null : () => context.push('/owner/clients/${client['id']}'),
     );
   }
 }

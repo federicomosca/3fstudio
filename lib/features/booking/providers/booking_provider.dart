@@ -64,6 +64,40 @@ class BookingNotifier extends AsyncNotifier<void> {
     if (user == null) throw Exception('Utente non autenticato');
 
     final client = ref.read(supabaseClientProvider);
+
+    final lessonRow = await client
+        .from('lessons')
+        .select('course_id')
+        .eq('id', lessonId)
+        .single();
+    final courseId = lessonRow['course_id'] as String;
+
+    // Verifica piano valido (Open o specifico per questo corso)
+    final now = DateTime.now().toUtc().toIso8601String();
+    final plansData = await client
+        .from('user_plans')
+        .select('credits_remaining, course_id, plans!inner(type)')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .or('expires_at.is.null,expires_at.gte.$now');
+
+    final plans = (plansData as List).cast<Map<String, dynamic>>();
+    final hasValidPlan = plans.any((p) {
+      final planCourseId = p['course_id'] as String?;
+      // Exclude plans scoped to a different course
+      if (planCourseId != null && planCourseId != courseId) return false;
+      final type =
+          (p['plans'] as Map<String, dynamic>)['type'] as String;
+      if (type == 'unlimited') return true;
+      final credits = p['credits_remaining'] as int?;
+      return credits != null && credits > 0;
+    });
+
+    if (!hasValidPlan) {
+      throw Exception(
+          'Nessun piano valido — usa "Prova" per richiedere una lezione di prova');
+    }
+
     await client.from('bookings').upsert(
       {
         'lesson_id': lessonId,
@@ -120,33 +154,59 @@ class BookingNotifier extends AsyncNotifier<void> {
 
     final client = ref.read(supabaseClientProvider);
 
-    // 1. Trova il piano attivo per scalare il credito
-    final now = DateTime.now().toUtc().toIso8601String();
-    final planRow = await client
-        .from('user_plans')
-        .select('id, credits_remaining')
-        .eq('user_id', user.id)
-        .or('expires_at.is.null,expires_at.gte.$now')
-        .order('expires_at', ascending: false)
-        .limit(1)
-        .maybeSingle();
+    // 1. Recupera il course_id della lezione
+    final lessonRow = await client
+        .from('lessons')
+        .select('course_id')
+        .eq('id', lessonId)
+        .single();
+    final courseId = lessonRow['course_id'] as String;
 
-    // 2. Segna la prenotazione come cancellata
+    // 2. Trova il piano crediti migliore (Open prima, poi specifico per corso)
+    final now = DateTime.now().toUtc().toIso8601String();
+    final plansData = await client
+        .from('user_plans')
+        .select('id, credits_remaining, course_id, plans!inner(type)')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .or('expires_at.is.null,expires_at.gte.$now');
+
+    final plans = (plansData as List).cast<Map<String, dynamic>>();
+
+    Map<String, dynamic>? bestPlan;
+    // Open credits plan first
+    for (final p in plans) {
+      final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
+      if (type != 'credits') continue;
+      if (p['course_id'] != null) continue; // skip course-specific
+      final credits = p['credits_remaining'] as int?;
+      if (credits != null && credits > 0) { bestPlan = p; break; }
+    }
+    // Fall back to course-specific
+    if (bestPlan == null) {
+      for (final p in plans) {
+        final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
+        if (type != 'credits') continue;
+        if (p['course_id'] != courseId) continue;
+        final credits = p['credits_remaining'] as int?;
+        if (credits != null && credits > 0) { bestPlan = p; break; }
+      }
+    }
+
+    // 3. Segna la prenotazione come cancellata
     await client
         .from('bookings')
         .update({'status': 'cancelled'})
         .eq('lesson_id', lessonId)
         .eq('user_id', user.id);
 
-    // 3. Scala un credito (se il piano esiste e ha crediti disponibili)
-    if (planRow != null) {
-      final credits = planRow['credits_remaining'] as int?;
-      if (credits != null && credits > 0) {
-        await client
-            .from('user_plans')
-            .update({'credits_remaining': credits - 1})
-            .eq('id', planRow['id'] as String);
-      }
+    // 4. Scala un credito
+    if (bestPlan != null) {
+      final credits = bestPlan['credits_remaining'] as int;
+      await client
+          .from('user_plans')
+          .update({'credits_remaining': credits - 1})
+          .eq('id', bestPlan['id'] as String);
     }
 
     ref.invalidate(userBookingsProvider);

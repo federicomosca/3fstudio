@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -67,8 +67,9 @@ class _StaffProfileScreenState extends ConsumerState<_StaffProfileScreen> {
   final _bioCtrl       = TextEditingController();
   final _instaCtrl     = TextEditingController();
   List<String> _selectedSpecs = [];
-  File? _pickedImage;
-  bool  _saving = false;
+  XFile?      _pickedXFile;
+  Uint8List?  _pickedBytes;
+  bool        _saving = false;
 
   @override
   void dispose() {
@@ -85,7 +86,8 @@ class _StaffProfileScreenState extends ConsumerState<_StaffProfileScreen> {
     _bioCtrl.text   = profile.bio ?? '';
     _instaCtrl.text = profile.instagramUrl ?? '';
     _selectedSpecs  = List.from(profile.specializations);
-    _pickedImage    = null;
+    _pickedXFile    = null;
+    _pickedBytes    = null;
     setState(() => _editing = true);
   }
 
@@ -96,7 +98,13 @@ class _StaffProfileScreenState extends ConsumerState<_StaffProfileScreen> {
       maxWidth: 800, maxHeight: 800,
       imageQuality: 85,
     );
-    if (xfile != null) setState(() => _pickedImage = File(xfile.path));
+    if (xfile != null) {
+      final bytes = await xfile.readAsBytes();
+      setState(() {
+        _pickedXFile = xfile;
+        _pickedBytes = bytes;
+      });
+    }
   }
 
   Future<void> _save() async {
@@ -107,9 +115,9 @@ class _StaffProfileScreenState extends ConsumerState<_StaffProfileScreen> {
     try {
       // Upload avatar se cambiato (restituisce solo l'URL, non salva)
       String? newAvatarUrl = current.avatarUrl;
-      if (_pickedImage != null) {
+      if (_pickedXFile != null) {
         newAvatarUrl =
-            await ref.read(myProfileProvider.notifier).uploadAvatar(_pickedImage!);
+            await ref.read(myProfileProvider.notifier).uploadAvatar(_pickedXFile!);
       }
 
       // Costruisce il profilo aggiornato passando esplicitamente tutti i campi,
@@ -191,7 +199,7 @@ class _StaffProfileScreenState extends ConsumerState<_StaffProfileScreen> {
                     bioCtrl:       _bioCtrl,
                     instaCtrl:     _instaCtrl,
                     selectedSpecs: _selectedSpecs,
-                    pickedImage:   _pickedImage,
+                    pickedBytes:   _pickedBytes,
                     onPickImage:   _pickImage,
                     onSpecToggle:  (s) => setState(() {
                       if (_selectedSpecs.contains(s)) {
@@ -343,7 +351,7 @@ class _EditForm extends StatelessWidget {
   final UserProfile        profile;
   final TextEditingController nameCtrl, phoneCtrl, bioCtrl, instaCtrl;
   final List<String>       selectedSpecs;
-  final File?              pickedImage;
+  final Uint8List?         pickedBytes;
   final VoidCallback       onPickImage;
   final ValueChanged<String> onSpecToggle;
 
@@ -354,7 +362,7 @@ class _EditForm extends StatelessWidget {
     required this.bioCtrl,
     required this.instaCtrl,
     required this.selectedSpecs,
-    required this.pickedImage,
+    required this.pickedBytes,
     required this.onPickImage,
     required this.onSpecToggle,
   });
@@ -368,10 +376,10 @@ class _EditForm extends StatelessWidget {
         Center(
           child: Stack(
             children: [
-              pickedImage != null
+              pickedBytes != null
                   ? CircleAvatar(
                       radius: 52,
-                      backgroundImage: FileImage(pickedImage!),
+                      backgroundImage: MemoryImage(pickedBytes!),
                     )
                   : UserAvatar(
                       avatarUrl: profile.avatarUrl,

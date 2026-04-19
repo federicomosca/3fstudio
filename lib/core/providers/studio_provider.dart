@@ -11,6 +11,9 @@ final appRolesProvider = FutureProvider<AppRoles>((ref) async {
 
   final client = ref.watch(supabaseClientProvider);
 
+  // Fetch all studio-role rows for this user across all studios.
+  // Requires the RLS on user_studio_roles to allow SELECT WHERE user_id = auth.uid()
+  // without an additional studio_id filter (see migration 011).
   final rolesRows = await client
       .from('user_studio_roles')
       .select('studio_id, role')
@@ -20,8 +23,14 @@ final appRolesProvider = FutureProvider<AppRoles>((ref) async {
     return AppRoles(studioId: null, studioRoles: {});
   }
 
-  final studioId = rolesRows.first['studio_id'] as String;
+  // Use the selected studio if available, otherwise fall back to the first row.
+  final selectedStudio =
+      ref.watch(selectedStudioProvider).whenOrNull(data: (s) => s);
+  final studioId =
+      selectedStudio?.id ?? rolesRows.first['studio_id'] as String;
+
   final roles = rolesRows
+      .where((r) => r['studio_id'] == studioId)
       .map<UserRole>((r) => UserRole.fromString(r['role'] as String))
       .toSet();
 

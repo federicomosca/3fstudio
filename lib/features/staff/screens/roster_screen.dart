@@ -12,7 +12,7 @@ final _lessonInfoProvider =
   final client = ref.watch(supabaseClientProvider);
   final data   = await client
       .from('lessons')
-      .select('id, starts_at, ends_at, capacity, courses(name, type)')
+      .select('id, starts_at, ends_at, capacity, course_id, courses(name, type)')
       .eq('id', lessonId)
       .maybeSingle();
   return data;
@@ -25,7 +25,7 @@ final _rosterProvider =
   final client = ref.watch(supabaseClientProvider);
   final data   = await client
       .from('bookings')
-      .select('id, status, users(id, full_name, avatar_url)')
+      .select('id, status, credits_deducted, user_id, users(id, full_name, avatar_url)')
       .eq('lesson_id', lessonId)
       .neq('status', 'cancelled')
       .order('created_at');
@@ -152,7 +152,7 @@ class RosterScreen extends ConsumerWidget {
                         booking: roster[i],
                         onStatusChange: (newStatus) async {
                           await _updateStatus(
-                              context, ref, roster[i]['id'] as String, newStatus);
+                              context, ref, roster[i], newStatus);
                         },
                       ),
                     ),
@@ -163,23 +163,89 @@ class RosterScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _updateStatus(BuildContext context, WidgetRef ref,
-      String bookingId, String newStatus) async {
+  Future<void> _updateStatus(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, dynamic> booking,
+    String newStatus,
+  ) async {
     try {
-      final client = ref.read(supabaseClientProvider);
+      final client    = ref.read(supabaseClientProvider);
+      final bookingId = booking['id'] as String;
+
       await client
           .from('bookings')
           .update({'status': newStatus})
           .eq('id', bookingId);
+
+      // Deduct credit when marking attended (once only)
+      if (newStatus == 'attended' &&
+          (booking['credits_deducted'] as bool? ?? false) == false) {
+        await _deductCredit(client, booking);
+        await client
+            .from('bookings')
+            .update({'credits_deducted': true})
+            .eq('id', bookingId);
+      }
+
       ref.invalidate(_rosterProvider(lessonId));
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Errore: $e'),
-              backgroundColor: Colors.red),
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
         );
       }
+    }
+  }
+
+  Future<void> _deductCredit(
+    dynamic client,
+    Map<String, dynamic> booking,
+  ) async {
+    final userId   = booking['user_id'] as String;
+    final lessonInfo = await client
+        .from('lessons')
+        .select('course_id')
+        .eq('id', lessonId)
+        .single();
+    final courseId = lessonInfo['course_id'] as String;
+
+    final now = DateTime.now().toUtc().toIso8601String();
+    final plansData = await client
+        .from('user_plans')
+        .select('id, credits_remaining, course_id, plans!inner(type)')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .or('expires_at.is.null,expires_at.gte.$now');
+
+    final plans = (plansData as List).cast<Map<String, dynamic>>();
+
+    Map<String, dynamic>? bestPlan;
+    // Open credits plan first
+    for (final p in plans) {
+      final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
+      if (type != 'credits') continue;
+      if (p['course_id'] != null) continue;
+      final credits = p['credits_remaining'] as int?;
+      if (credits != null && credits > 0) { bestPlan = p; break; }
+    }
+    // Fall back to course-specific
+    if (bestPlan == null) {
+      for (final p in plans) {
+        final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
+        if (type != 'credits') continue;
+        if (p['course_id'] != courseId) continue;
+        final credits = p['credits_remaining'] as int?;
+        if (credits != null && credits > 0) { bestPlan = p; break; }
+      }
+    }
+
+    if (bestPlan != null) {
+      final credits = bestPlan['credits_remaining'] as int;
+      await client
+          .from('user_plans')
+          .update({'credits_remaining': credits - 1})
+          .eq('id', bestPlan['id'] as String);
     }
   }
 }

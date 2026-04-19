@@ -15,7 +15,7 @@ class ClientShell extends ConsumerWidget {
     return Scaffold(
       body: Column(
         children: [
-          const SedeSelectorBar(),
+          const SedeSelectorBar(profileRoute: '/client/profile'),
           Expanded(child: child),
         ],
       ),

@@ -95,7 +95,7 @@ final _ownerCoursesProvider =
   final client = ref.watch(supabaseClientProvider);
   final data = await client
       .from('courses')
-      .select('id, name, type')
+      .select('id, name, type, class_owner_id')
       .eq('studio_id', studioId)
       .order('name');
   return (data as List).cast<Map<String, dynamic>>();
@@ -1192,7 +1192,16 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
                         child: Text(c['name'] as String),
                       )),
                 ],
-                onChanged: (v) => setState(() => _courseId = v),
+                onChanged: (v) {
+                  final classOwnerId = v == null
+                      ? null
+                      : list.firstWhere((c) => c['id'] == v,
+                              orElse: () => {})['class_owner_id'] as String?;
+                  setState(() {
+                    _courseId = v;
+                    if (classOwnerId != null) _trainerId = classOwnerId;
+                  });
+                },
               ),
             ),
             const SizedBox(height: 12),

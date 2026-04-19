@@ -1,18 +1,46 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../features/auth/providers/auth_provider.dart';
+import '../../../core/providers/studio_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
+
+final _studioPlansProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final studioId = ref.watch(currentStudioIdProvider);
+  if (studioId == null) return [];
+  final client = ref.watch(supabaseClientProvider);
+  final data = await client
+      .from('plans')
+      .select('id, name, type, credits, duration_days, price')
+      .eq('studio_id', studioId)
+      .order('price');
+  return (data as List).cast<Map<String, dynamic>>();
+});
+
+final _studioCoursesProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final studioId = ref.watch(currentStudioIdProvider);
+  if (studioId == null) return [];
+  final client = ref.watch(supabaseClientProvider);
+  final data = await client
+      .from('courses')
+      .select('id, name')
+      .eq('studio_id', studioId)
+      .order('name');
+  return (data as List).cast<Map<String, dynamic>>();
+});
 
 final _clientDetailProvider =
     FutureProvider.family<Map<String, dynamic>?, String>((ref, userId) async {
   final client = ref.watch(supabaseClientProvider);
   final data   = await client
       .from('users')
-      .select('id, full_name, email, phone, user_plans(id, credits_remaining, expires_at, plans(name, type))')
+      .select('id, full_name, email, phone, user_plans(id, credits_remaining, expires_at, course_id, status, courses(name), plans(name, type))')
       .eq('id', userId)
       .maybeSingle();
   return data;
@@ -63,6 +91,104 @@ class _ClientBody extends ConsumerWidget {
   final Map<String, dynamic> client;
   const _ClientBody({required this.userId, required this.client});
 
+  Future<void> _managePlan(
+    BuildContext context,
+    WidgetRef ref,
+    String uid,
+    Map<String, dynamic> plan,
+    String action,
+  ) async {
+    final db         = ref.read(supabaseClientProvider);
+    final planId     = plan['id'] as String;
+    final planName   = (plan['plans'] as Map<String, dynamic>?)?['name'] as String? ?? '—';
+    final isSuspended = plan['status'] == 'suspended';
+
+    if (action == 'cancel') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Cancella piano'),
+          content: Text(
+              'Cancellare "$planName"? Il piano non sarà più visibile.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annulla')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error),
+                child: const Text('Cancella')),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+      await db.from('user_plans').update({'status': 'cancelled'}).eq('id', planId);
+    } else if (action == 'toggle_suspend') {
+      final newStatus = isSuspended ? 'active' : 'suspended';
+      await db.from('user_plans').update({'status': newStatus}).eq('id', planId);
+    }
+
+    ref.invalidate(_clientDetailProvider(uid));
+  }
+
+  void _openAssignPlan(BuildContext context, String uid) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => _AssignPlanSheet(userId: uid),
+    );
+  }
+
+  Future<void> _archiveClient(BuildContext context, WidgetRef ref) async {
+    final name     = client['full_name'] as String? ?? '—';
+    final studioId = ref.read(currentStudioIdProvider);
+    if (studioId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Archivia cliente'),
+        content: Text(
+          'Archiviare $name? Non comparirà più nell\'elenco clienti '
+          'ma il suo account rimarrà intatto.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('Archivia'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final db = ref.read(supabaseClientProvider);
+      await db
+          .from('user_studio_roles')
+          .update({'is_active': false})
+          .eq('user_id', userId)
+          .eq('studio_id', studioId);
+      if (context.mounted) context.pop();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bookingsAsync = ref.watch(_clientBookingsProvider(userId));
@@ -70,10 +196,10 @@ class _ClientBody extends ConsumerWidget {
     final email = client['email']     as String? ?? '—';
     final phone = client['phone']     as String?;
 
-    final userPlans = client['user_plans'] as List?;
-    final plan      = userPlans?.isNotEmpty == true
-        ? userPlans!.first as Map<String, dynamic>
-        : null;
+    final userPlans = (client['user_plans'] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .where((p) => p['status'] != 'cancelled')
+        .toList();
 
     return CustomScrollView(
       slivers: [
@@ -83,6 +209,13 @@ class _ClientBody extends ConsumerWidget {
           pinned: true,
           backgroundColor: AppTheme.charcoal,
           foregroundColor: Colors.white,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.archive_outlined),
+              tooltip: 'Archivia cliente',
+              onPressed: () => _archiveClient(context, ref),
+            ),
+          ],
           flexibleSpace: FlexibleSpaceBar(
             background: Container(
               color: AppTheme.charcoal,
@@ -133,10 +266,34 @@ class _ClientBody extends ConsumerWidget {
                 ]),
                 const SizedBox(height: 20),
 
-                // Piano
-                _SectionTitle('Piano attivo'),
+                // Piani
+                Row(
+                  children: [
+                    Expanded(child: _SectionTitle('Piani attivi')),
+                    TextButton.icon(
+                      onPressed: () => _openAssignPlan(context, userId),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Assegna'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: AppTheme.blue,
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
-                _PlanCard(plan: plan),
+                if (userPlans.isEmpty)
+                  _PlanCard(plan: null, onManage: null)
+                else
+                  ...userPlans.asMap().entries.map((e) => Padding(
+                        padding: EdgeInsets.only(
+                            bottom: e.key < userPlans.length - 1 ? 8 : 0),
+                        child: _PlanCard(
+                          plan: e.value,
+                          onManage: (action) =>
+                              _managePlan(context, ref, userId, e.value, action),
+                        ),
+                      )),
                 const SizedBox(height: 20),
 
                 // Prenotazioni
@@ -184,7 +341,8 @@ class _ClientBody extends ConsumerWidget {
 
 class _PlanCard extends StatelessWidget {
   final Map<String, dynamic>? plan;
-  const _PlanCard({this.plan});
+  final void Function(String action)? onManage;
+  const _PlanCard({this.plan, required this.onManage});
 
   @override
   Widget build(BuildContext context) {
@@ -208,66 +366,139 @@ class _PlanCard extends StatelessWidget {
       );
     }
 
-    final planData   = plan!['plans'] as Map<String, dynamic>?;
-    final planName   = planData?['name'] as String? ?? '—';
-    final planType   = planData?['type'] as String? ?? '';
-    final credits    = plan!['credits_remaining'] as int?;
-    final expiresAt  = plan!['expires_at'] as String?;
+    final planData    = plan!['plans'] as Map<String, dynamic>?;
+    final planName    = planData?['name'] as String? ?? '—';
+    final planType    = planData?['type'] as String? ?? '';
+    final credits     = plan!['credits_remaining'] as int?;
+    final expiresAt   = plan!['expires_at'] as String?;
+    final courseData  = plan!['courses'] as Map<String, dynamic>?;
+    final courseName  = courseData?['name'] as String?;
+    final planStatus  = plan!['status'] as String? ?? 'active';
+    final isSuspended = planStatus == 'suspended';
 
     DateTime? expDate;
     if (expiresAt != null) expDate = DateTime.tryParse(expiresAt);
 
-    final isExpiringSoon = expDate != null &&
+    final isExpiringSoon = !isSuspended &&
+        expDate != null &&
         expDate.isBefore(DateTime.now().add(const Duration(days: 7)));
-    final isLowCredits =
-        planType == 'credits' && credits != null && credits <= 2;
+    final isLowCredits = !isSuspended &&
+        planType == 'credits' &&
+        credits != null &&
+        credits <= 2;
     final isWarning = isExpiringSoon || isLowCredits;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isWarning
+    final borderColor = isSuspended
+        ? Theme.of(context).colorScheme.outline
+        : isWarning
+            ? Colors.orange.withAlpha(100)
+            : Theme.of(context).colorScheme.outline;
+    final bgColor = isSuspended
+        ? Theme.of(context).colorScheme.surface
+        : isWarning
             ? Colors.orange.withAlpha(30)
-            : Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color: isWarning
-                ? Colors.orange.withAlpha(100)
-                : Theme.of(context).colorScheme.outline),
-      ),
-      child: Row(children: [
-        Icon(Icons.card_membership_outlined,
-            color: isWarning
-                ? const Color(0xFFFFB74D)
-                : Theme.of(context).colorScheme.onSurface.withAlpha(180),
-            size: 22),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(planName,
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
-              if (planType == 'credits' && credits != null)
-                Text('$credits crediti rimanenti',
+            : Theme.of(context).colorScheme.surface;
+
+    return Opacity(
+      opacity: isSuspended ? 0.5 : 1.0,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(children: [
+          Icon(Icons.card_membership_outlined,
+              color: isSuspended
+                  ? Theme.of(context).colorScheme.onSurface.withAlpha(100)
+                  : isWarning
+                      ? const Color(0xFFFFB74D)
+                      : Theme.of(context).colorScheme.onSurface.withAlpha(180),
+              size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Expanded(
+                    child: Text(planName,
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                  if (isSuspended)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withAlpha(30),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text('Sospeso',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFFFB74D))),
+                    ),
+                ]),
+                const SizedBox(height: 2),
+                _ScopeChip(courseName: courseName),
+                if (planType == 'credits' && credits != null)
+                  Text('$credits crediti rimanenti',
+                      style: TextStyle(
+                          color: isLowCredits
+                              ? const Color(0xFFFFB74D)
+                              : Theme.of(context).colorScheme.onSurface.withAlpha(180),
+                          fontSize: 13)),
+                if (expDate != null)
+                  Text(
+                    'Scade il ${DateFormat('d MMM yyyy', 'it_IT').format(expDate)}',
                     style: TextStyle(
-                        color: isLowCredits
+                        color: isExpiringSoon
                             ? const Color(0xFFFFB74D)
                             : Theme.of(context).colorScheme.onSurface.withAlpha(180),
-                        fontSize: 13)),
-              if (expDate != null)
-                Text(
-                  'Scade il ${DateFormat('d MMM yyyy', 'it_IT').format(expDate)}',
-                  style: TextStyle(
-                      color: isExpiringSoon
-                          ? const Color(0xFFFFB74D)
-                          : Theme.of(context).colorScheme.onSurface.withAlpha(180),
-                      fontSize: 13),
-                ),
-            ],
+                        fontSize: 13),
+                  ),
+              ],
+            ),
           ),
-        ),
-      ]),
+          if (onManage != null)
+            PopupMenuButton<String>(
+              color: Theme.of(context).colorScheme.surface,
+              onSelected: onManage!,
+              icon: Icon(Icons.more_vert,
+                  color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
+                  size: 20),
+              itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'toggle_suspend',
+                  child: Row(children: [
+                    Icon(
+                      isSuspended
+                          ? Icons.play_circle_outline
+                          : Icons.pause_circle_outline,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(isSuspended ? 'Riattiva' : 'Sospendi'),
+                  ]),
+                ),
+                PopupMenuItem(
+                  value: 'cancel',
+                  child: Row(children: [
+                    Icon(Icons.cancel_outlined,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.error),
+                    const SizedBox(width: 10),
+                    Text('Cancella',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error)),
+                  ]),
+                ),
+              ],
+            ),
+        ]),
+      ),
     );
   }
 }
@@ -350,6 +581,292 @@ class _BookingRow extends StatelessWidget {
           ],
         ),
       ]),
+    );
+  }
+}
+
+// ── Scope chip ────────────────────────────────────────────────────────────────
+
+class _ScopeChip extends StatelessWidget {
+  final String? courseName;
+  const _ScopeChip({this.courseName});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = courseName ?? 'Aperto';
+    final color = courseName != null ? AppTheme.cyan : AppTheme.blue;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withAlpha(30),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            courseName != null ? Icons.lock_outline : Icons.all_inclusive,
+            size: 11,
+            color: color,
+          ),
+          const SizedBox(width: 3),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Assign plan sheet ─────────────────────────────────────────────────────────
+
+class _AssignPlanSheet extends ConsumerStatefulWidget {
+  final String userId;
+  const _AssignPlanSheet({required this.userId});
+
+  @override
+  ConsumerState<_AssignPlanSheet> createState() => _AssignPlanSheetState();
+}
+
+class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
+  String? _selectedPlanId;
+  bool    _isOpen    = true;   // true = Open, false = course-specific
+  String? _courseId;
+  bool    _saving    = false;
+
+  Future<void> _save(List<Map<String, dynamic>> plans) async {
+    if (_selectedPlanId == null) return;
+    if (!_isOpen && _courseId == null) return;
+
+    final plan = plans.firstWhere((p) => p['id'] == _selectedPlanId,
+        orElse: () => {});
+    if (plan.isEmpty) return;
+
+    setState(() => _saving = true);
+    try {
+      final db       = ref.read(supabaseClientProvider);
+      final now      = DateTime.now().toUtc();
+      final duration = plan['duration_days'] as int?;
+      final planType = plan['type'] as String? ?? 'credits';
+      final credits  = plan['credits'] as int?;
+
+      await db.from('user_plans').insert({
+        'user_id':           widget.userId,
+        'plan_id':           _selectedPlanId,
+        'course_id':         _isOpen ? null : _courseId,
+        'credits_remaining': planType == 'credits' ? credits : null,
+        'expires_at':        duration != null
+            ? now.add(Duration(days: duration)).toIso8601String()
+            : null,
+      });
+
+      ref.invalidate(_clientDetailProvider(widget.userId));
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Errore: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs          = Theme.of(context).colorScheme;
+    final plansAsync  = ref.watch(_studioPlansProvider);
+    final coursesAsync = ref.watch(_studioCoursesProvider);
+
+    final canSave = _selectedPlanId != null &&
+        (_isOpen || _courseId != null) &&
+        !_saving;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20, right: 20, top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: cs.outline,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text('Assegna piano',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 20),
+          plansAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) =>
+                Text('Errore: $e', style: TextStyle(color: cs.error)),
+            data: (plans) => plans.isEmpty
+                ? Text('Nessun piano disponibile',
+                    style: TextStyle(color: cs.onSurface.withAlpha(150)))
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // ── Plan picker ───────────────────────────────────
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedPlanId,
+                        decoration: const InputDecoration(labelText: 'Piano'),
+                        items: plans.map((p) {
+                          final type    = p['type'] as String? ?? '';
+                          final price   = (p['price'] as num?)?.toDouble() ?? 0;
+                          final credits = p['credits'] as int?;
+                          final typeLabel = switch (type) {
+                            'unlimited' => 'Illimitato',
+                            'trial'     => 'Prova',
+                            _ => credits != null ? '$credits lezioni' : 'Crediti',
+                          };
+                          return DropdownMenuItem(
+                            value: p['id'] as String,
+                            child: Text(
+                              '${p['name']}  ·  $typeLabel  ·  €${price.toStringAsFixed(0)}',
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (v) =>
+                            setState(() { _selectedPlanId = v; }),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // ── Scope toggle ──────────────────────────────────
+                      Text('Validità',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface.withAlpha(150))),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _ScopeToggle(
+                            label: 'Aperto',
+                            icon: Icons.all_inclusive,
+                            selected: _isOpen,
+                            color: AppTheme.blue,
+                            onTap: () => setState(() {
+                              _isOpen   = true;
+                              _courseId = null;
+                            }),
+                          ),
+                          const SizedBox(width: 10),
+                          _ScopeToggle(
+                            label: 'Specifico',
+                            icon: Icons.lock_outline,
+                            selected: !_isOpen,
+                            color: AppTheme.cyan,
+                            onTap: () => setState(() => _isOpen = false),
+                          ),
+                        ],
+                      ),
+
+                      // ── Course picker (only when Specifico) ───────────
+                      if (!_isOpen) ...[
+                        const SizedBox(height: 14),
+                        coursesAsync.when(
+                          loading: () =>
+                              const LinearProgressIndicator(),
+                          error: (e, _) => Text('Errore: $e',
+                              style: TextStyle(color: cs.error)),
+                          data: (courses) =>
+                              DropdownButtonFormField<String>(
+                            initialValue: _courseId,
+                            decoration:
+                                const InputDecoration(labelText: 'Corso'),
+                            items: courses
+                                .map((c) => DropdownMenuItem(
+                                      value: c['id'] as String,
+                                      child: Text(c['name'] as String),
+                                    ))
+                                .toList(),
+                            onChanged: (v) =>
+                                setState(() => _courseId = v),
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: canSave ? () => _save(plans) : null,
+                          child: _saving
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white),
+                                )
+                              : const Text('Attiva piano'),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopeToggle extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+  const _ScopeToggle({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? color.withAlpha(40) : cs.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? color : cs.outline,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon,
+                  size: 20,
+                  color: selected ? color : cs.onSurface.withAlpha(120)),
+              const SizedBox(height: 4),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: selected ? color : cs.onSurface.withAlpha(150))),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

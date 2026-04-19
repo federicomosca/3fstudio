@@ -104,12 +104,7 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Calendario'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.account_circle_outlined),
-            onPressed: () => context.push('/staff/profile'),
-          ),
-        ],
+        actions: const [],
       ),
       floatingActionButton: isCourseOwner
           ? FloatingActionButton.extended(

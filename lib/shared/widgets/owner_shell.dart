@@ -16,7 +16,7 @@ class OwnerShell extends ConsumerWidget {
     return Scaffold(
       body: Column(
         children: [
-          SedeSelectorBar(profileRoute: '/owner/profile'),
+          const SedeSelectorBar(profileRoute: '/owner/profile'),
           Expanded(child: child),
         ],
       ),

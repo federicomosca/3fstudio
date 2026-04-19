@@ -24,7 +24,9 @@
       "Bash(curl *)",
       "Bash(gh issue *)",
       "Bash(class_owner)",
-      "Bash(courses.class_owner_id)"
+      "Bash(courses.class_owner_id)",
+      "Bash(supabase migration *)",
+      "Bash(supabase db *)"
     ]
   }
 }

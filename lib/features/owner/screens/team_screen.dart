@@ -21,7 +21,8 @@ final _allCoursesProvider =
   return (data as List).cast<Map<String, dynamic>>();
 });
 
-final _teamProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final _teamProvider =
+    FutureProvider.family<List<Map<String, dynamic>>, bool>((ref, isActive) async {
   final studioId = ref.watch(currentStudioIdProvider);
   if (studioId == null) return [];
   final client = ref.watch(supabaseClientProvider);
@@ -30,6 +31,7 @@ final _teamProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
       .from('user_studio_roles')
       .select('role, users(id, full_name, email, phone)')
       .eq('studio_id', studioId)
+      .eq('is_active', isActive)
       .inFilter('role', ['trainer']);
 
   // Raggruppa per utente: un utente può avere più ruoli
@@ -47,38 +49,18 @@ final _teamProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-class TeamScreen extends ConsumerWidget {
+class TeamScreen extends ConsumerStatefulWidget {
   final bool hideAppBar;
   const TeamScreen({super.key, this.hideAppBar = false});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final team = ref.watch(_teamProvider);
+  ConsumerState<TeamScreen> createState() => _TeamScreenState();
+}
 
-    return Scaffold(
-      appBar: hideAppBar ? null : AppBar(title: const Text('Team')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddTrainerDialog(context, ref),
-        icon: const Icon(Icons.person_add_outlined),
-        label: const Text('Aggiungi'),
-      ),
-      body: team.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-            child: Text('Errore: $e', style: const TextStyle(color: Colors.red))),
-        data: (list) => list.isEmpty
-            ? _EmptyTeam(onAdd: () => _showAddTrainerDialog(context, ref))
-            : ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: list.length,
-                separatorBuilder: (context, i) => const SizedBox(height: 8),
-                itemBuilder: (context, i) => _MemberTile(member: list[i]),
-              ),
-      ),
-    );
-  }
+class _TeamScreenState extends ConsumerState<TeamScreen> {
+  bool _showArchived = false;
 
-  void _showAddTrainerDialog(BuildContext context, WidgetRef ref) {
+  void _showAddTrainerDialog() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -87,13 +69,104 @@ class TeamScreen extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => _AddTrainerSheet(
-        onCreated: () => ref.invalidate(_teamProvider),
+        onCreated: () => ref.invalidate(_teamProvider(!_showArchived)),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final team = ref.watch(_teamProvider(!_showArchived));
+
+    return Scaffold(
+      appBar: widget.hideAppBar
+          ? null
+          : AppBar(title: Text(_showArchived ? 'Team · Archiviati' : 'Team')),
+      floatingActionButton: _showArchived
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _showAddTrainerDialog,
+              icon: const Icon(Icons.person_add_outlined),
+              label: const Text('Aggiungi'),
+            ),
+      body: Column(
+        children: [
+          // ── Archive toggle ─────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(
+              children: [
+                FilterChip(
+                  label: const Text('Attivi'),
+                  selected: !_showArchived,
+                  onSelected: (_) => setState(() => _showArchived = false),
+                ),
+                const SizedBox(width: 8),
+                FilterChip(
+                  avatar: const Icon(Icons.archive_outlined, size: 16),
+                  label: const Text('Archiviati'),
+                  selected: _showArchived,
+                  onSelected: (_) => setState(() => _showArchived = true),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          // ── List ───────────────────────────────────────────────────────
+          Expanded(
+            child: team.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                  child: Text('Errore: $e',
+                      style: const TextStyle(color: Colors.red))),
+              data: (list) => list.isEmpty
+                  ? _showArchived
+                      ? _EmptyArchive(label: 'Nessun trainer archiviato')
+                      : _EmptyTeam(onAdd: _showAddTrainerDialog)
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: list.length,
+                      separatorBuilder: (context, i) =>
+                          const SizedBox(height: 8),
+                      itemBuilder: (context, i) => _MemberTile(
+                        member: list[i],
+                        isArchived: _showArchived,
+                        onReactivated: () => ref.invalidate(_teamProvider(false)),
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// ── Empty state ───────────────────────────────────────────────────────────────
+// ── Empty states ──────────────────────────────────────────────────────────────
+
+class _EmptyArchive extends StatelessWidget {
+  final String label;
+  const _EmptyArchive({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.archive_outlined, size: 64,
+              color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
+          const SizedBox(height: 16),
+          Text(label,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+}
 
 class _EmptyTeam extends StatelessWidget {
   final VoidCallback onAdd;
@@ -138,7 +211,54 @@ class _EmptyTeam extends StatelessWidget {
 
 class _MemberTile extends ConsumerWidget {
   final Map<String, dynamic> member;
-  const _MemberTile({required this.member});
+  final bool isArchived;
+  final VoidCallback? onReactivated;
+  const _MemberTile({
+    required this.member,
+    this.isArchived = false,
+    this.onReactivated,
+  });
+
+  Future<void> _reactivate(BuildContext context, WidgetRef ref) async {
+    final name     = member['full_name'] as String? ?? '—';
+    final studioId = ref.read(currentStudioIdProvider);
+    if (studioId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Riattiva trainer'),
+        content: Text('Riattivare $name nel team?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Riattiva'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final db = ref.read(supabaseClientProvider);
+      await db
+          .from('user_studio_roles')
+          .update({'is_active': true})
+          .eq('user_id', member['id'] as String)
+          .eq('studio_id', studioId);
+      onReactivated?.call();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -152,7 +272,7 @@ class _MemberTile extends ConsumerWidget {
         .length;
     final subtitle = [
       'Trainer',
-      if (phone != null) phone,
+      ?phone,
       if (ownedCount > 0) '$ownedCount cors${ownedCount > 1 ? 'i' : 'o'} responsabile',
     ].join(' · ');
 
@@ -160,46 +280,125 @@ class _MemberTile extends ConsumerWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       tileColor: Theme.of(context).colorScheme.surface,
       leading: CircleAvatar(
-        backgroundColor: Theme.of(context).colorScheme.primary.withAlpha(20),
+        backgroundColor: Theme.of(context).colorScheme.primary.withAlpha(isArchived ? 10 : 20),
         child: Text(
           name.isNotEmpty ? name[0].toUpperCase() : '?',
           style: TextStyle(
-              color: Theme.of(context).colorScheme.primary,
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withAlpha(isArchived ? 120 : 255),
               fontWeight: FontWeight.bold),
         ),
       ),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+      title: Text(name,
+          style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: isArchived
+                  ? Theme.of(context).colorScheme.onSurface.withAlpha(150)
+                  : null)),
       subtitle: Text(subtitle),
-      trailing: Icon(Icons.chevron_right,
-          color: Theme.of(context).colorScheme.onSurface.withAlpha(100)),
-      onTap: () => showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: false,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (_) => _TrainerDetailSheet(
-          member: member,
-          onChanged: () => ref.invalidate(_allCoursesProvider),
-        ),
-      ),
+      trailing: isArchived
+          ? TextButton(
+              onPressed: () => _reactivate(context, ref),
+              child: const Text('Riattiva'),
+            )
+          : Icon(Icons.chevron_right,
+              color: Theme.of(context).colorScheme.onSurface.withAlpha(100)),
+      onTap: isArchived
+          ? null
+          : () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              useSafeArea: false,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              builder: (_) => _TrainerDetailSheet(
+                member: member,
+                onChanged: () {
+                  ref.invalidate(_allCoursesProvider);
+                  ref.invalidate(_teamProvider(true));
+                  ref.invalidate(_teamProvider(false));
+                },
+              ),
+            ),
     );
   }
 }
 
 // ── Trainer detail sheet ──────────────────────────────────────────────────────
 
-class _TrainerDetailSheet extends ConsumerWidget {
+class _TrainerDetailSheet extends ConsumerStatefulWidget {
   final Map<String, dynamic> member;
   final VoidCallback onChanged;
   const _TrainerDetailSheet({required this.member, required this.onChanged});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_TrainerDetailSheet> createState() =>
+      _TrainerDetailSheetState();
+}
+
+class _TrainerDetailSheetState extends ConsumerState<_TrainerDetailSheet> {
+  bool _archiving = false;
+
+  Future<void> _archive() async {
+    final name      = widget.member['full_name'] as String? ?? '—';
+    final trainerId = widget.member['id'] as String;
+    final studioId  = ref.read(currentStudioIdProvider);
+    if (studioId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Archivia trainer'),
+        content: Text(
+          'Archiviare $name? Non comparirà più nell\'elenco del team '
+          'ma il suo account rimarrà intatto.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('Archivia'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _archiving = true);
+    try {
+      final db = ref.read(supabaseClientProvider);
+      await db
+          .from('user_studio_roles')
+          .update({'is_active': false})
+          .eq('user_id', trainerId)
+          .eq('studio_id', studioId);
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onChanged();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+        setState(() => _archiving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme       = Theme.of(context);
-    final name        = member['full_name'] as String? ?? '—';
-    final trainerId   = member['id'] as String;
+    final name        = widget.member['full_name'] as String? ?? '—';
+    final trainerId   = widget.member['id'] as String;
     final coursesAsync = ref.watch(_allCoursesProvider);
 
     return DraggableScrollableSheet(
@@ -277,10 +476,33 @@ class _TrainerDetailSheet extends ConsumerWidget {
                               course: c,
                               trainerId: trainerId,
                               trainerName: name,
-                              onChanged: onChanged,
+                              onChanged: widget.onChanged,
                             ))
                         .toList(),
                   ),
+          ),
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _archiving ? null : _archive,
+              icon: _archiving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : Icon(Icons.archive_outlined,
+                      color: theme.colorScheme.error),
+              label: Text(
+                'Archivia trainer',
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: theme.colorScheme.error.withAlpha(120)),
+              ),
+            ),
           ),
         ],
       ),

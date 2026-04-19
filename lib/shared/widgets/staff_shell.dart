@@ -16,7 +16,7 @@ class StaffShell extends ConsumerWidget {
     return Scaffold(
       body: Column(
         children: [
-          const SedeSelectorBar(),
+          const SedeSelectorBar(profileRoute: '/staff/profile'),
           Expanded(child: child),
         ],
       ),

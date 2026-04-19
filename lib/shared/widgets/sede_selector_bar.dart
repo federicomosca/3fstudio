@@ -45,12 +45,8 @@ class SedeSelectorBar extends ConsumerWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: selectedAsync.when(
-                    loading: () => const SizedBox(
-                      height: 14,
-                      width: 14,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    ),
+                    loading: () => const Text('…',
+                        style: TextStyle(color: Colors.white, fontSize: 14)),
                     error: (e, _) =>
                         const Text('—', style: TextStyle(color: Colors.white)),
                     data: (studio) => Column(

@@ -1,5 +1,5 @@
-import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../features/auth/providers/auth_provider.dart';
@@ -136,30 +136,25 @@ class MyProfileNotifier extends AsyncNotifier<UserProfile?> {
 
   /// Carica un'immagine su Supabase Storage e restituisce il public URL.
   /// Non chiama save() — è compito del chiamante salvare il profilo completo.
-  Future<String?> uploadAvatar(File imageFile) async {
+  Future<String?> uploadAvatar(XFile imageFile) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return null;
 
     final client = Supabase.instance.client;
 
     // Estrae l'estensione in modo robusto; fallback a 'jpg'
-    final rawExt = imageFile.path.split('.').last.toLowerCase();
+    final rawExt = imageFile.name.split('.').last.toLowerCase();
     final ext    = _safeImageExt(rawExt);
     final mime   = 'image/$ext';
     final path   = '${user.id}/avatar.$ext';
     final bytes  = await imageFile.readAsBytes();
 
-    // Rimuove il file precedente (best effort) per evitare conflitti.
-    // Se non esiste o la policy manca, l'errore viene ignorato.
-    try {
-      await client.storage.from('avatars').remove([path]);
-    } catch (_) {}
-
-    // Upload senza upsert: richiede solo la policy INSERT (migration 005).
+    // upsert: true usa la policy UPDATE (già presente in migration 005),
+    // evitando il pattern fragile remove + insert.
     await client.storage.from('avatars').uploadBinary(
       path,
       bytes,
-      fileOptions: FileOptions(contentType: mime, upsert: false),
+      fileOptions: FileOptions(contentType: mime, upsert: true),
     );
 
     final url = client.storage.from('avatars').getPublicUrl(path);
