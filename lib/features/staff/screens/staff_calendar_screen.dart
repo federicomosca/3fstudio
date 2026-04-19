@@ -7,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
+import '../../../shared/widgets/recurring_section.dart';
 
 // ── Providers ────────────────────────────────────────────────────────────────
 
@@ -445,17 +446,23 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
   late DateTime _startTime;
   late DateTime _endTime;
   final _capCtrl = TextEditingController();
-  int? _maxCapacity; // capienza massima dello spazio selezionato
+  int? _maxCapacity;
   bool _loading = false;
   String? _error;
   Set<String> _occupiedRoomIds = {};
+
+  // Recurring
+  bool _isRecurring = false;
+  final Set<int> _recurDays = {};
+  late DateTime _recurUntil;
 
   @override
   void initState() {
     super.initState();
     final d = widget.initialDate;
-    _startTime = DateTime(d.year, d.month, d.day, 9, 0);
-    _endTime = DateTime(d.year, d.month, d.day, 10, 0);
+    _startTime  = DateTime(d.year, d.month, d.day, 9, 0);
+    _endTime    = DateTime(d.year, d.month, d.day, 10, 0);
+    _recurUntil = d.add(const Duration(days: 28));
     _capCtrl.text = '10';
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadOccupiedRooms());
   }
@@ -505,67 +512,97 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
     _loadOccupiedRooms();
   }
 
+  List<DateTime> _occurrences() {
+    if (!_isRecurring || _recurDays.isEmpty) return [_startTime];
+    final dates  = <DateTime>[];
+    var cursor   = DateTime(widget.initialDate.year, widget.initialDate.month,
+        widget.initialDate.day);
+    final until  = DateTime(
+        _recurUntil.year, _recurUntil.month, _recurUntil.day, 23, 59);
+    while (!cursor.isAfter(until)) {
+      if (_recurDays.contains(cursor.weekday)) {
+        dates.add(DateTime(cursor.year, cursor.month, cursor.day,
+            _startTime.hour, _startTime.minute));
+      }
+      cursor = cursor.add(const Duration(days: 1));
+    }
+    return dates;
+  }
+
   Future<void> _submit() async {
     if (_courseId == null) {
       setState(() => _error = 'Seleziona un corso');
       return;
     }
     if (!_endTime.isAfter(_startTime)) {
-      setState(() => _error = 'L\'orario di fine deve essere dopo l\'inizio');
+      setState(() => _error = "L'orario di fine deve essere dopo l'inizio");
+      return;
+    }
+    if (_isRecurring && _recurDays.isEmpty) {
+      setState(() => _error = 'Seleziona almeno un giorno della settimana');
       return;
     }
     final capacity = int.tryParse(_capCtrl.text.trim()) ?? 0;
     if (_maxCapacity != null && capacity > _maxCapacity!) {
-      setState(() => _error = 'I posti non possono superare la capienza dello spazio ($_maxCapacity)');
+      setState(() => _error =
+          'I posti non possono superare la capienza dello spazio ($_maxCapacity)');
       return;
     }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
     try {
-      final user      = ref.read(currentUserProvider);
-      final client    = ref.read(supabaseClientProvider);
-      final startsUtc = _startTime.toUtc().toIso8601String();
-      final endsUtc   = _endTime.toUtc().toIso8601String();
+      final user       = ref.read(currentUserProvider);
+      final client     = ref.read(supabaseClientProvider);
+      final duration   = _endTime.difference(_startTime);
+      final occurrences = _occurrences();
 
       if (_roomId != null) {
-        final conflicts = await client
-            .from('lessons')
-            .select('id')
-            .eq('room_id', _roomId!)
-            .neq('status', 'rejected')
-            .lt('starts_at', endsUtc)
-            .gt('ends_at', startsUtc);
-        if ((conflicts as List).isNotEmpty) {
-          throw Exception('Lo spazio è già occupato in questo orario');
+        for (final start in occurrences) {
+          final end = start.add(duration);
+          final conflicts = await client
+              .from('lessons')
+              .select('id')
+              .eq('room_id', _roomId!)
+              .neq('status', 'rejected')
+              .lt('starts_at', end.toUtc().toIso8601String())
+              .gt('ends_at', start.toUtc().toIso8601String());
+          if ((conflicts as List).isNotEmpty) {
+            final dateFmt = DateFormat('d MMM', 'it_IT');
+            throw Exception('Conflitto sala il ${dateFmt.format(start)}');
+          }
         }
       }
 
-      await client.from('lessons').insert({
-        'course_id':   _courseId,
-        'trainer_id':  user?.id,
-        'starts_at':   startsUtc,
-        'ends_at':     endsUtc,
-        'capacity':    int.tryParse(_capCtrl.text.trim()) ?? 10,
-        if (_roomId != null) 'room_id': _roomId,
-        'status':      'pending',
-        'proposed_by': user?.id,
-      });
+      final rows = occurrences.map((start) {
+        final end = start.add(duration);
+        return {
+          'course_id':   _courseId,
+          'trainer_id':  user?.id,
+          'starts_at':   start.toUtc().toIso8601String(),
+          'ends_at':     end.toUtc().toIso8601String(),
+          'capacity':    capacity == 0 ? 10 : capacity,
+          if (_roomId != null) 'room_id': _roomId,
+          'status':      'pending',
+          'proposed_by': user?.id,
+        };
+      }).toList();
+
+      await client.from('lessons').insert(rows);
 
       if (mounted) {
         Navigator.of(context).pop();
         widget.onProposed();
+        final msg = occurrences.length == 1
+            ? 'Proposta inviata all\'owner per approvazione'
+            : '${occurrences.length} proposte inviate all\'owner';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Proposta inviata all\'owner per approvazione'),
-            backgroundColor: Color(0xFFFFB74D),
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: const Color(0xFFFFB74D),
           ),
         );
       }
     } catch (e) {
-      setState(
-          () => _error = e.toString().replaceFirst('Exception: ', ''));
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -749,6 +786,39 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+
+            // Ricorrenza
+            RecurringSection(
+              isRecurring: _isRecurring,
+              recurDays: _recurDays,
+              recurUntil: _recurUntil,
+              onToggle: (v) => setState(() {
+                _isRecurring = v;
+                if (v && _recurDays.isEmpty) {
+                  _recurDays.add(widget.initialDate.weekday);
+                }
+              }),
+              onDayToggled: (day) => setState(() {
+                if (_recurDays.contains(day)) {
+                  _recurDays.remove(day);
+                } else {
+                  _recurDays.add(day);
+                }
+              }),
+              onPickUntil: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _recurUntil,
+                  firstDate: widget.initialDate,
+                  lastDate:
+                      widget.initialDate.add(const Duration(days: 365)),
+                );
+                if (picked != null) setState(() => _recurUntil = picked);
+              },
+              occurrenceCount:
+                  _isRecurring ? _occurrences().length : null,
+            ),
 
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -776,7 +846,9 @@ class _ProposeLessonSheetState extends ConsumerState<_ProposeLessonSheet> {
                         width: 20,
                         child:
                             CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Invia proposta'),
+                    : Text(_isRecurring && _recurDays.isNotEmpty
+                        ? 'Proponi ${_occurrences().length} lezioni'
+                        : 'Invia proposta'),
               ),
             ),
           ],
