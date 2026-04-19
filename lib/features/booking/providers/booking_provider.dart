@@ -1,35 +1,67 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../calendar/providers/lessons_provider.dart';
 
-// Set di lesson_id prenotati dall'utente corrente (status confirmed)
+// Set di lesson_id prenotati dall'utente (confirmed) — solo lezioni future/oggi
 final userBookingsProvider = FutureProvider<Set<String>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return {};
 
-  final client = ref.watch(supabaseClientProvider);
+  final client  = ref.watch(supabaseClientProvider);
+  final today   = DateTime.now();
+  final startOfToday = DateTime(today.year, today.month, today.day)
+      .toUtc().toIso8601String();
+
   final response = await client
       .from('bookings')
-      .select('lesson_id')
+      .select('lesson_id, lessons!inner(starts_at)')
       .eq('user_id', user.id)
-      .eq('status', 'confirmed');
+      .eq('status', 'confirmed')
+      .gte('lessons.starts_at', startOfToday);
 
   return (response as List)
       .map<String>((b) => b['lesson_id'] as String)
       .toSet();
 });
 
-// Set di lesson_id con prenotazione prova in attesa di approvazione
+// Set di lesson_id in lista d'attesa — solo lezioni future/oggi
+final userWaitlistProvider = FutureProvider<Set<String>>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return {};
+
+  final client  = ref.watch(supabaseClientProvider);
+  final today   = DateTime.now();
+  final startOfToday = DateTime(today.year, today.month, today.day)
+      .toUtc().toIso8601String();
+
+  final response = await client
+      .from('waitlist')
+      .select('lesson_id, lessons!inner(starts_at)')
+      .eq('user_id', user.id)
+      .gte('lessons.starts_at', startOfToday);
+
+  return (response as List)
+      .map<String>((w) => w['lesson_id'] as String)
+      .toSet();
+});
+
+// Set di lesson_id con prova in attesa — solo lezioni future/oggi
 final userPendingTrialLessonsProvider = FutureProvider<Set<String>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return {};
 
-  final client = ref.watch(supabaseClientProvider);
+  final client  = ref.watch(supabaseClientProvider);
+  final today   = DateTime.now();
+  final startOfToday = DateTime(today.year, today.month, today.day)
+      .toUtc().toIso8601String();
+
   final response = await client
       .from('bookings')
-      .select('lesson_id')
+      .select('lesson_id, lessons!inner(starts_at)')
       .eq('user_id', user.id)
       .eq('status', 'pending')
-      .eq('is_trial', true);
+      .eq('is_trial', true)
+      .gte('lessons.starts_at', startOfToday);
 
   return (response as List)
       .map<String>((b) => b['lesson_id'] as String)
@@ -127,6 +159,7 @@ class BookingNotifier extends AsyncNotifier<void> {
     );
 
     ref.invalidate(userBookingsProvider);
+    ref.invalidate(lessonsForDayProvider);
   }
 
   /// Richiede una lezione di prova per un corso a cui non si è iscritti.
@@ -163,6 +196,33 @@ class BookingNotifier extends AsyncNotifier<void> {
 
     ref.invalidate(userBookingsProvider);
     ref.invalidate(userPendingTrialLessonsProvider);
+    ref.invalidate(lessonsForDayProvider);
+    ref.invalidate(userWaitlistProvider);
+  }
+
+  Future<void> joinWaitlist(String lessonId) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) throw Exception('Utente non autenticato');
+    final client = ref.read(supabaseClientProvider);
+    await client.from('waitlist').upsert(
+      {'lesson_id': lessonId, 'user_id': user.id},
+      onConflict: 'user_id,lesson_id',
+    );
+    ref.invalidate(userWaitlistProvider);
+    ref.invalidate(lessonsForDayProvider);
+  }
+
+  Future<void> leaveWaitlist(String lessonId) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) throw Exception('Utente non autenticato');
+    final client = ref.read(supabaseClientProvider);
+    await client
+        .from('waitlist')
+        .delete()
+        .eq('lesson_id', lessonId)
+        .eq('user_id', user.id);
+    ref.invalidate(userWaitlistProvider);
+    ref.invalidate(lessonsForDayProvider);
   }
 
   /// Cancella la prenotazione E scala un credito dal piano attivo.
@@ -228,6 +288,7 @@ class BookingNotifier extends AsyncNotifier<void> {
     }
 
     ref.invalidate(userBookingsProvider);
+    ref.invalidate(lessonsForDayProvider);
   }
 }
 

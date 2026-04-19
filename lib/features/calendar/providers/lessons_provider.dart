@@ -13,7 +13,7 @@ final selectedDayProvider =
     NotifierProvider<_SelectedDayNotifier, DateTime>(_SelectedDayNotifier.new);
 
 final lessonsForDayProvider =
-    FutureProvider.family<List<Lesson>, DateTime>((ref, date) async {
+    FutureProvider.autoDispose.family<List<Lesson>, DateTime>((ref, date) async {
   final studioId = ref.watch(currentStudioIdProvider);
   if (studioId == null) return [];
 
@@ -23,7 +23,7 @@ final lessonsForDayProvider =
 
   final response = await client
       .from('lessons')
-      .select('*, courses!inner(name, type, studio_id, users!class_owner_id(id, full_name))')
+      .select('*, courses!inner(name, type, studio_id, cancellation_hours, users!class_owner_id(id, full_name)), bookings(count), waitlist(count)')
       .gte('starts_at', startOfDay.toIso8601String())
       .lt('starts_at', endOfDay.toIso8601String())
       .eq('courses.studio_id', studioId)
@@ -38,7 +38,7 @@ final lessonsForDayProvider =
 
 // Giorni del mese corrente che hanno almeno una lezione
 final lessonDaysProvider =
-    FutureProvider.family<Set<DateTime>, DateTime>((ref, month) async {
+    FutureProvider.autoDispose.family<Set<DateTime>, DateTime>((ref, month) async {
   final studioId = ref.watch(currentStudioIdProvider);
   if (studioId == null) return {};
 

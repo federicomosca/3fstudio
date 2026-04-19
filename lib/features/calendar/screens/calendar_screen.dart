@@ -30,6 +30,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final userBookings  = ref.watch(userBookingsProvider);
     final hasActivePlan = ref.watch(hasActivePlanProvider);
     final pendingTrials = ref.watch(userPendingTrialLessonsProvider);
+    final userWaitlist  = ref.watch(userWaitlistProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -135,9 +136,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   );
                 }
 
-                final bookedIds    = userBookings.whenOrNull(data: (ids) => ids) ?? {};
-                final clientHasPlan = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
-                final pendingIds  = pendingTrials.whenOrNull(data: (ids) => ids) ?? {};
+                final bookedIds      = userBookings.whenOrNull(data: (ids) => ids) ?? {};
+                final clientHasPlan  = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
+                final pendingIds     = pendingTrials.whenOrNull(data: (ids) => ids) ?? {};
+                final waitlistIds    = userWaitlist.whenOrNull(data: (ids) => ids) ?? {};
 
                 return ListView.builder(
                   padding: const EdgeInsets.only(bottom: 16),
@@ -146,16 +148,20 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     final lesson         = lessonList[index];
                     final isBooked       = bookedIds.contains(lesson.id);
                     final isPendingTrial = pendingIds.contains(lesson.id);
+                    final isOnWaitlist   = waitlistIds.contains(lesson.id);
 
                     return LessonCard(
                       lesson: lesson,
                       isBooked: isBooked,
                       hasActivePlan: clientHasPlan,
                       isPendingTrial: isPendingTrial,
-                      bookedCount: 0,
+                      isOnWaitlist: isOnWaitlist,
+                      bookedCount: lesson.bookedCount,
                       onBook: () => _book(lesson.id),
-                      onCancel: () => _cancel(lesson.id),
+                      onCancel: () => _cancel(lesson),
                       onBookTrial: () => _bookTrial(lesson),
+                      onJoinWaitlist: () => _joinWaitlist(lesson.id),
+                      onLeaveWaitlist: () => _leaveWaitlist(lesson.id),
                     );
                   },
                 );
@@ -250,20 +256,36 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     }
   }
 
-  Future<void> _cancel(String lessonId) async {
+  Future<void> _cancel(Lesson lesson) async {
+    final hours = lesson.cancellationHours;
+    final insideWindow = hours > 0 &&
+        DateTime.now().isAfter(
+            lesson.startTime.subtract(Duration(hours: hours)));
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Annulla prenotazione'),
-        content: const Text('Sei sicuro di voler annullare questa prenotazione?'),
+        content: insideWindow
+            ? Text(
+                'La cancellazione gratuita era disponibile fino a '
+                '$hours ore prima della lezione.\n\n'
+                'Annullando ora verrà scalato 1 credito dal tuo piano.',
+              )
+            : const Text(
+                'Sei sicuro di voler annullare questa prenotazione?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('No')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Mantieni'),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Sì, annulla',
-                  style: TextStyle(color: Colors.red))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              insideWindow ? 'Annulla e scala credito' : 'Sì, annulla',
+              style: const TextStyle(color: Colors.red),
+            ),
+          ),
         ],
       ),
     );
@@ -271,17 +293,60 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     if (confirm != true) return;
 
     try {
-      await ref.read(bookingNotifierProvider.notifier).cancel(lessonId);
+      if (insideWindow) {
+        await ref
+            .read(bookingNotifierProvider.notifier)
+            .cancelWithCreditDeduction(lesson.id);
+      } else {
+        await ref.read(bookingNotifierProvider.notifier).cancel(lesson.id);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Prenotazione annullata')),
+          SnackBar(
+            content: Text(insideWindow
+                ? 'Prenotazione annullata · 1 credito scalato'
+                : 'Prenotazione annullata'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Errore: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _joinWaitlist(String lessonId) async {
+    try {
+      await ref.read(bookingNotifierProvider.notifier).joinWaitlist(lessonId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aggiunto alla lista d\'attesa')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _leaveWaitlist(String lessonId) async {
+    try {
+      await ref.read(bookingNotifierProvider.notifier).leaveWaitlist(lessonId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Rimosso dalla lista d\'attesa')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
         );
       }
     }

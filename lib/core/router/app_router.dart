@@ -16,6 +16,7 @@ import '../../features/owner/screens/team_screen.dart';
 import '../../features/owner/screens/clients_screen.dart';
 import '../../features/owner/screens/client_detail_screen.dart';
 import '../../features/owner/screens/plans_screen.dart';
+import '../../features/owner/screens/report_screen.dart';
 import '../../features/owner/screens/owner_manage_screen.dart';
 
 // Staff
@@ -123,6 +124,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                     courseId: state.pathParameters['courseId']!)),
           GoRoute(path: '/owner/manage',
               builder: (ctx, state) => const OwnerManageScreen()),
+          GoRoute(path: '/owner/report',
+              builder: (ctx, state) => const ReportScreen()),
           GoRoute(path: '/owner/rooms',
               builder: (ctx, state) => const RoomsScreen()),
           GoRoute(path: '/owner/team',
