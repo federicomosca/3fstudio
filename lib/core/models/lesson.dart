@@ -9,6 +9,7 @@ class Lesson {
   final int capacity;
   final int bookedCount;
   final int waitlistCount;
+  final int cancellationHours;
 
   const Lesson({
     required this.id,
@@ -21,6 +22,7 @@ class Lesson {
     this.trainerName,
     this.bookedCount = 0,
     this.waitlistCount = 0,
+    this.cancellationHours = 0,
   });
 
   factory Lesson.fromJson(Map<String, dynamic> json) {
@@ -35,16 +37,17 @@ class Lesson {
         ? (waitlist.first['count'] as int? ?? 0)
         : 0;
     return Lesson(
-      id:            json['id'] as String,
-      courseId:      json['course_id'] as String,
-      courseName:    course['name'] as String,
-      courseType:    course['type'] as String,
-      trainerName:   trainer?['full_name'] as String?,
-      startTime:     DateTime.parse(json['starts_at'] as String).toLocal(),
-      endTime:       DateTime.parse(json['ends_at'] as String).toLocal(),
-      capacity:      json['capacity'] as int,
-      bookedCount:   count,
-      waitlistCount: wCount,
+      id:                 json['id'] as String,
+      courseId:           json['course_id'] as String,
+      courseName:         course['name'] as String,
+      courseType:         course['type'] as String,
+      trainerName:        trainer?['full_name'] as String?,
+      startTime:          DateTime.parse(json['starts_at'] as String).toLocal(),
+      endTime:            DateTime.parse(json['ends_at'] as String).toLocal(),
+      capacity:           json['capacity'] as int,
+      bookedCount:        count,
+      waitlistCount:      wCount,
+      cancellationHours:  course['cancellation_hours'] as int? ?? 0,
     );
   }
 }

@@ -158,7 +158,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       isOnWaitlist: isOnWaitlist,
                       bookedCount: lesson.bookedCount,
                       onBook: () => _book(lesson.id),
-                      onCancel: () => _cancel(lesson.id),
+                      onCancel: () => _cancel(lesson),
                       onBookTrial: () => _bookTrial(lesson),
                       onJoinWaitlist: () => _joinWaitlist(lesson.id),
                       onLeaveWaitlist: () => _leaveWaitlist(lesson.id),
@@ -256,20 +256,36 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     }
   }
 
-  Future<void> _cancel(String lessonId) async {
+  Future<void> _cancel(Lesson lesson) async {
+    final hours = lesson.cancellationHours;
+    final insideWindow = hours > 0 &&
+        DateTime.now().isAfter(
+            lesson.startTime.subtract(Duration(hours: hours)));
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Annulla prenotazione'),
-        content: const Text('Sei sicuro di voler annullare questa prenotazione?'),
+        content: insideWindow
+            ? Text(
+                'La cancellazione gratuita era disponibile fino a '
+                '$hours ore prima della lezione.\n\n'
+                'Annullando ora verrà scalato 1 credito dal tuo piano.',
+              )
+            : const Text(
+                'Sei sicuro di voler annullare questa prenotazione?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('No')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Mantieni'),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Sì, annulla',
-                  style: TextStyle(color: Colors.red))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              insideWindow ? 'Annulla e scala credito' : 'Sì, annulla',
+              style: const TextStyle(color: Colors.red),
+            ),
+          ),
         ],
       ),
     );
@@ -277,17 +293,26 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     if (confirm != true) return;
 
     try {
-      await ref.read(bookingNotifierProvider.notifier).cancel(lessonId);
+      if (insideWindow) {
+        await ref
+            .read(bookingNotifierProvider.notifier)
+            .cancelWithCreditDeduction(lesson.id);
+      } else {
+        await ref.read(bookingNotifierProvider.notifier).cancel(lesson.id);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Prenotazione annullata')),
+          SnackBar(
+            content: Text(insideWindow
+                ? 'Prenotazione annullata · 1 credito scalato'
+                : 'Prenotazione annullata'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Errore: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
         );
       }
     }
