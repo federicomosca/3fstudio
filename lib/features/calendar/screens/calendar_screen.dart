@@ -30,6 +30,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final userBookings  = ref.watch(userBookingsProvider);
     final hasActivePlan = ref.watch(hasActivePlanProvider);
     final pendingTrials = ref.watch(userPendingTrialLessonsProvider);
+    final userWaitlist  = ref.watch(userWaitlistProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -135,9 +136,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   );
                 }
 
-                final bookedIds    = userBookings.whenOrNull(data: (ids) => ids) ?? {};
-                final clientHasPlan = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
-                final pendingIds  = pendingTrials.whenOrNull(data: (ids) => ids) ?? {};
+                final bookedIds      = userBookings.whenOrNull(data: (ids) => ids) ?? {};
+                final clientHasPlan  = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
+                final pendingIds     = pendingTrials.whenOrNull(data: (ids) => ids) ?? {};
+                final waitlistIds    = userWaitlist.whenOrNull(data: (ids) => ids) ?? {};
 
                 return ListView.builder(
                   padding: const EdgeInsets.only(bottom: 16),
@@ -146,16 +148,20 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     final lesson         = lessonList[index];
                     final isBooked       = bookedIds.contains(lesson.id);
                     final isPendingTrial = pendingIds.contains(lesson.id);
+                    final isOnWaitlist   = waitlistIds.contains(lesson.id);
 
                     return LessonCard(
                       lesson: lesson,
                       isBooked: isBooked,
                       hasActivePlan: clientHasPlan,
                       isPendingTrial: isPendingTrial,
+                      isOnWaitlist: isOnWaitlist,
                       bookedCount: lesson.bookedCount,
                       onBook: () => _book(lesson.id),
                       onCancel: () => _cancel(lesson.id),
                       onBookTrial: () => _bookTrial(lesson),
+                      onJoinWaitlist: () => _joinWaitlist(lesson.id),
+                      onLeaveWaitlist: () => _leaveWaitlist(lesson.id),
                     );
                   },
                 );
@@ -282,6 +288,40 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _joinWaitlist(String lessonId) async {
+    try {
+      await ref.read(bookingNotifierProvider.notifier).joinWaitlist(lessonId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aggiunto alla lista d\'attesa')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _leaveWaitlist(String lessonId) async {
+    try {
+      await ref.read(bookingNotifierProvider.notifier).leaveWaitlist(lessonId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Rimosso dalla lista d\'attesa')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
         );
       }
     }

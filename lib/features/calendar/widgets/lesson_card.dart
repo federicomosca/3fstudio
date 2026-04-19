@@ -7,15 +7,15 @@ import '../../../core/models/lesson.dart';
 class LessonCard extends StatelessWidget {
   final Lesson lesson;
   final bool isBooked;
-  /// Il client ha un piano attivo valido (crediti > 0 o unlimited).
   final bool hasActivePlan;
-  /// Il client ha già una prenotazione prova in attesa per questa lezione.
   final bool isPendingTrial;
+  final bool isOnWaitlist;
   final int bookedCount;
   final VoidCallback? onBook;
   final VoidCallback? onCancel;
-  /// Richiedi lezione di prova (solo per corsi a cui non si è iscritti).
   final VoidCallback? onBookTrial;
+  final VoidCallback? onJoinWaitlist;
+  final VoidCallback? onLeaveWaitlist;
 
   const LessonCard({
     super.key,
@@ -24,9 +24,12 @@ class LessonCard extends StatelessWidget {
     required this.bookedCount,
     this.hasActivePlan = false,
     this.isPendingTrial = false,
+    this.isOnWaitlist = false,
     this.onBook,
     this.onCancel,
     this.onBookTrial,
+    this.onJoinWaitlist,
+    this.onLeaveWaitlist,
   });
 
   @override
@@ -126,6 +129,19 @@ class LessonCard extends StatelessWidget {
                               : theme.colorScheme.onSurface.withAlpha(150),
                         ),
                       ),
+                      if (isFull && lesson.waitlistCount > 0) ...[
+                        const SizedBox(width: 8),
+                        Icon(Icons.schedule,
+                            size: 14,
+                            color: theme.colorScheme.onSurface.withAlpha(120)),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${lesson.waitlistCount} in lista',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color:
+                                  theme.colorScheme.onSurface.withAlpha(120)),
+                        ),
+                      ],
                     ],
                   ),
                 ],
@@ -169,10 +185,34 @@ class LessonCard extends StatelessWidget {
       );
     }
 
+    // Lezione piena → gestione lista d'attesa
+    if (isFull) {
+      if (isOnWaitlist) {
+        return OutlinedButton(
+          onPressed: onLeaveWaitlist,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.orange,
+            side: BorderSide(color: Colors.orange.withAlpha(180)),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          ),
+          child: const Text('In lista', style: TextStyle(fontSize: 12)),
+        );
+      }
+      return OutlinedButton(
+        onPressed: onJoinWaitlist,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.orange,
+          side: BorderSide(color: Colors.orange.withAlpha(180)),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        ),
+        child: const Text('Lista d\'attesa', style: TextStyle(fontSize: 12)),
+      );
+    }
+
     // Nessun piano attivo → bottone prova
     if (!hasActivePlan) {
       return OutlinedButton(
-        onPressed: isFull ? null : onBookTrial,
+        onPressed: onBookTrial,
         style: OutlinedButton.styleFrom(
           foregroundColor: const Color(0xFFFFB74D),
           side: BorderSide(color: Colors.orange.withAlpha(180)),
@@ -184,15 +224,12 @@ class LessonCard extends StatelessWidget {
 
     // Iscritto → prenotazione normale
     return ElevatedButton(
-      onPressed: isFull ? null : onBook,
+      onPressed: onBook,
       style: ElevatedButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         minimumSize: Size.zero,
       ),
-      child: Text(
-        isFull ? 'Completo' : 'Prenota',
-        style: const TextStyle(fontSize: 12),
-      ),
+      child: const Text('Prenota', style: TextStyle(fontSize: 12)),
     );
   }
 }

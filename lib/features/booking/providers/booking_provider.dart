@@ -19,6 +19,20 @@ final userBookingsProvider = FutureProvider<Set<String>>((ref) async {
       .toSet();
 });
 
+// Set di lesson_id per cui l'utente è in lista d'attesa
+final userWaitlistProvider = FutureProvider<Set<String>>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return {};
+  final client = ref.watch(supabaseClientProvider);
+  final response = await client
+      .from('waitlist')
+      .select('lesson_id')
+      .eq('user_id', user.id);
+  return (response as List)
+      .map<String>((w) => w['lesson_id'] as String)
+      .toSet();
+});
+
 // Set di lesson_id con prenotazione prova in attesa di approvazione
 final userPendingTrialLessonsProvider = FutureProvider<Set<String>>((ref) async {
   final user = ref.watch(currentUserProvider);
@@ -165,6 +179,32 @@ class BookingNotifier extends AsyncNotifier<void> {
 
     ref.invalidate(userBookingsProvider);
     ref.invalidate(userPendingTrialLessonsProvider);
+    ref.invalidate(lessonsForDayProvider);
+    ref.invalidate(userWaitlistProvider);
+  }
+
+  Future<void> joinWaitlist(String lessonId) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) throw Exception('Utente non autenticato');
+    final client = ref.read(supabaseClientProvider);
+    await client.from('waitlist').upsert(
+      {'lesson_id': lessonId, 'user_id': user.id},
+      onConflict: 'user_id,lesson_id',
+    );
+    ref.invalidate(userWaitlistProvider);
+    ref.invalidate(lessonsForDayProvider);
+  }
+
+  Future<void> leaveWaitlist(String lessonId) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) throw Exception('Utente non autenticato');
+    final client = ref.read(supabaseClientProvider);
+    await client
+        .from('waitlist')
+        .delete()
+        .eq('lesson_id', lessonId)
+        .eq('user_id', user.id);
+    ref.invalidate(userWaitlistProvider);
     ref.invalidate(lessonsForDayProvider);
   }
 
