@@ -449,6 +449,7 @@ class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
         'hourly_rate':         double.tryParse(_rateCtrl.text.trim()) ?? 0,
       }).eq('id', widget.courseId);
 
+      ref.invalidate(coursesProvider);
       if (mounted) {
         Navigator.of(context).pop();
         widget.onSaved();
