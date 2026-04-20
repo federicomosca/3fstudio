@@ -38,7 +38,9 @@ final _ownerLessonsForDayProvider =
       .from('lessons')
       .select(
           'id, starts_at, ends_at, capacity, status, '
-          'courses!inner(id, name, type), bookings(count), waitlist(count)')
+          'courses!inner(id, name, type), '
+          'users!trainer_id(full_name), '
+          'bookings(count), waitlist(count)')
       .gte('starts_at', start)
       .lt('starts_at', end)
       .eq('courses.studio_id', studioId)
@@ -254,6 +256,8 @@ class OwnerCalendarScreen extends ConsumerWidget {
                         final l = list[i];
                         final course =
                             l['courses'] as Map<String, dynamic>;
+                        final trainer =
+                            (l['users'] as Map<String, dynamic>?)?['full_name'] as String?;
                         final bookings = l['bookings'] as List? ?? [];
                         final count = bookings.isNotEmpty
                             ? (bookings.first['count'] as int? ?? 0)
@@ -336,9 +340,12 @@ class OwnerCalendarScreen extends ConsumerWidget {
                                   ),
                               ],
                             ),
-                            subtitle: Text(wCount > 0
-                                ? '$count/$cap iscritti · $wCount in lista'
-                                : '$count/$cap iscritti'),
+                            subtitle: Text([
+                              ?trainer,
+                              wCount > 0
+                                  ? '$count/$cap iscritti · $wCount in lista'
+                                  : '$count/$cap iscritti',
+                            ].join(' · ')),
                             trailing: isPending
                                 ? Row(
                                     mainAxisSize: MainAxisSize.min,

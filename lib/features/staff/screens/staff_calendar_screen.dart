@@ -31,7 +31,7 @@ final _staffLessonsForDayProvider =
 
   final data = await client
       .from('lessons')
-      .select('id, starts_at, ends_at, capacity, status, trainer_id, courses!inner(name, type, class_owner_id, studio_id), bookings(count), waitlist(count)')
+      .select('id, starts_at, ends_at, capacity, status, trainer_id, courses!inner(name, type, class_owner_id, studio_id), users!trainer_id(full_name), bookings(count), waitlist(count)')
       .gte('starts_at', start)
       .lt('starts_at', end)
       .eq('courses.studio_id', studioId)
@@ -189,6 +189,7 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                       itemBuilder: (context, i) {
                         final l       = list[i];
                         final course  = l['courses'] as Map<String, dynamic>;
+                        final trainer = (l['users'] as Map<String, dynamic>?)?['full_name'] as String?;
                         final bookings = l['bookings'] as List? ?? [];
                         final count   = bookings.isNotEmpty
                             ? int.tryParse(
@@ -263,9 +264,12 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                                   ),
                               ],
                             ),
-                            subtitle: Text(wCount > 0
-                                ? '$count/$cap iscritti · $wCount in lista'
-                                : '$count/$cap iscritti'),
+                            subtitle: Text([
+                              ?trainer,
+                              wCount > 0
+                                  ? '$count/$cap iscritti · $wCount in lista'
+                                  : '$count/$cap iscritti',
+                            ].join(' · ')),
                             trailing: isPending || isDeletePending || !isMyLesson
                                 ? null
                                 : PopupMenuButton<String>(

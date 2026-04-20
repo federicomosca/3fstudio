@@ -27,7 +27,7 @@ class Lesson {
 
   factory Lesson.fromJson(Map<String, dynamic> json) {
     final course    = json['courses'] as Map<String, dynamic>;
-    final trainer   = course['users'] as Map<String, dynamic>?;
+    final trainer   = json['users'] as Map<String, dynamic>?;   // lesson-level trainer
     final bookings  = (json['bookings'] as List?)?.cast<Map<String, dynamic>>();
     final waitlist  = json['waitlist'] as List?;
     final count     = bookings == null ? 0

@@ -23,7 +23,7 @@ final lessonsForDayProvider =
 
   final response = await client
       .from('lessons')
-      .select('*, courses!inner(name, type, studio_id, cancel_window_hours, users!class_owner_id(id, full_name)), bookings(status), waitlist(count)')
+      .select('*, courses!inner(name, type, studio_id, cancel_window_hours), users!trainer_id(full_name), bookings(status), waitlist(count)')
       .gte('starts_at', startOfDay.toIso8601String())
       .lt('starts_at', endOfDay.toIso8601String())
       .eq('courses.studio_id', studioId)
