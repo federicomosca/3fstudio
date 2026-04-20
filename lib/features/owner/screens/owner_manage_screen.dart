@@ -5,6 +5,7 @@ import 'studios_screen.dart';
 import 'team_screen.dart';
 import 'plans_screen.dart';
 import 'report_screen.dart';
+import 'pricing_settings_screen.dart';
 
 class OwnerManageScreen extends StatelessWidget {
   const OwnerManageScreen({super.key});
@@ -12,7 +13,7 @@ class OwnerManageScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Gestione'),
@@ -28,6 +29,7 @@ class OwnerManageScreen extends StatelessWidget {
               Tab(icon: Icon(Icons.card_membership_outlined), text: 'Piani'),
               Tab(icon: Icon(Icons.location_city_outlined), text: 'Sedi'),
               Tab(icon: Icon(Icons.bar_chart_outlined), text: 'Report'),
+              Tab(icon: Icon(Icons.percent_outlined), text: 'Tariffe'),
             ],
           ),
         ),
@@ -38,6 +40,7 @@ class OwnerManageScreen extends StatelessWidget {
             PlansScreen(hideAppBar: true),
             StudiosScreen(hideAppBar: true),
             ReportScreen(hideAppBar: true),
+            PricingSettingsScreen(hideAppBar: true),
           ],
         ),
       ),

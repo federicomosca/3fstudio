@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../providers/pricing_provider.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ final _studioCoursesProvider =
   final client = ref.watch(supabaseClientProvider);
   final data = await client
       .from('courses')
-      .select('id, name')
+      .select('id, name, type, hourly_rate')
       .eq('studio_id', studioId)
       .order('name');
   return (data as List).cast<Map<String, dynamic>>();
@@ -631,11 +632,15 @@ class _AssignPlanSheet extends ConsumerStatefulWidget {
 
 class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
   String? _selectedPlanId;
-  bool    _isOpen    = true;   // true = Open, false = course-specific
+  bool    _isOpen   = true;
   String? _courseId;
-  bool    _saving    = false;
+  bool    _saving   = false;
 
-  Future<void> _save(List<Map<String, dynamic>> plans) async {
+  Future<void> _save(
+    List<Map<String, dynamic>> plans,
+    List<Map<String, dynamic>> courses,
+    Map<String, dynamic>? pricing,
+  ) async {
     if (_selectedPlanId == null) return;
     if (!_isOpen && _courseId == null) return;
 
@@ -643,13 +648,26 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
         orElse: () => {});
     if (plan.isEmpty) return;
 
+    final selectedCourse = _courseId != null
+        ? courses.where((c) => c['id'] == _courseId).firstOrNull
+        : null;
+
+    final rate = _isOpen
+        ? calcOpenRate(courses, pricing ?? {})
+        : (selectedCourse != null && pricing != null
+            ? calcCourseRate(selectedCourse, pricing)
+            : null);
+
+    final planType = plan['type'] as String? ?? 'credits';
+    final credits  = plan['credits'] as int?;
+    final pricePaid = rate != null && credits != null ? rate * credits : null;
+    final formula = _isOpen ? 'open' : (selectedCourse?['type'] as String?);
+
     setState(() => _saving = true);
     try {
       final db       = ref.read(supabaseClientProvider);
       final now      = DateTime.now().toUtc();
       final duration = plan['duration_days'] as int?;
-      final planType = plan['type'] as String? ?? 'credits';
-      final credits  = plan['credits'] as int?;
 
       await db.from('user_plans').insert({
         'user_id':           widget.userId,
@@ -659,6 +677,9 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
         'expires_at':        duration != null
             ? now.add(Duration(days: duration)).toIso8601String()
             : null,
+        'formula':           formula,
+        'rate_snapshot':     rate,
+        'price_paid':        pricePaid,
       });
 
       ref.invalidate(_clientDetailProvider(widget.userId));
@@ -675,13 +696,10 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final cs          = Theme.of(context).colorScheme;
-    final plansAsync  = ref.watch(_studioPlansProvider);
+    final cs           = Theme.of(context).colorScheme;
+    final plansAsync   = ref.watch(_studioPlansProvider);
     final coursesAsync = ref.watch(_studioCoursesProvider);
-
-    final canSave = _selectedPlanId != null &&
-        (_isOpen || _courseId != null) &&
-        !_saving;
+    final pricingAsync = ref.watch(studioPricingProvider);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -692,130 +710,271 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Handle
           Center(
             child: Container(
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: cs.outline,
-                borderRadius: BorderRadius.circular(2),
-              ),
+                  color: cs.outline, borderRadius: BorderRadius.circular(2)),
             ),
           ),
           const SizedBox(height: 16),
           const Text('Assegna piano',
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           const SizedBox(height: 20),
+
           plansAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) =>
-                Text('Errore: $e', style: TextStyle(color: cs.error)),
-            data: (plans) => plans.isEmpty
-                ? Text('Nessun piano disponibile',
-                    style: TextStyle(color: cs.onSurface.withAlpha(150)))
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // ── Plan picker ───────────────────────────────────
+            error: (e, _) => Text('Errore: $e', style: TextStyle(color: cs.error)),
+            data: (plans) => coursesAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text('Errore: $e', style: TextStyle(color: cs.error)),
+              data: (courses) {
+                final pricing = pricingAsync.whenOrNull(data: (p) => p);
+
+                final selectedCourse = _courseId != null
+                    ? courses.where((c) => c['id'] == _courseId).firstOrNull
+                    : null;
+
+                final rate = _isOpen
+                    ? (pricing != null ? calcOpenRate(courses, pricing) : null)
+                    : (selectedCourse != null && pricing != null
+                        ? calcCourseRate(selectedCourse, pricing)
+                        : null);
+
+                final selectedPlan = _selectedPlanId != null
+                    ? plans.where((p) => p['id'] == _selectedPlanId).firstOrNull
+                    : null;
+                final credits = selectedPlan?['credits'] as int?;
+                final planType = selectedPlan?['type'] as String? ?? '';
+
+                final canSave = _selectedPlanId != null &&
+                    (_isOpen || _courseId != null) &&
+                    !_saving;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ── Scope toggle ──────────────────────────────────
+                    Text('Tipologia',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface.withAlpha(150))),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      _ScopeToggle(
+                        label: 'Open',
+                        icon: Icons.all_inclusive,
+                        selected: _isOpen,
+                        color: AppTheme.blue,
+                        onTap: () => setState(() {
+                          _isOpen   = true;
+                          _courseId = null;
+                        }),
+                      ),
+                      const SizedBox(width: 10),
+                      _ScopeToggle(
+                        label: 'Corso',
+                        icon: Icons.lock_outline,
+                        selected: !_isOpen,
+                        color: AppTheme.cyan,
+                        onTap: () => setState(() => _isOpen = false),
+                      ),
+                    ]),
+
+                    // ── Course picker ─────────────────────────────────
+                    if (!_isOpen) ...[
+                      const SizedBox(height: 14),
                       DropdownButtonFormField<String>(
-                        initialValue: _selectedPlanId,
-                        decoration: const InputDecoration(labelText: 'Piano'),
-                        items: plans.map((p) {
-                          final type    = p['type'] as String? ?? '';
-                          final price   = (p['price'] as num?)?.toDouble() ?? 0;
-                          final credits = p['credits'] as int?;
-                          final typeLabel = switch (type) {
-                            'unlimited' => 'Illimitato',
-                            'trial'     => 'Prova',
-                            _ => credits != null ? '$credits lezioni' : 'Crediti',
-                          };
+                        initialValue: _courseId,
+                        decoration: const InputDecoration(labelText: 'Corso'),
+                        items: courses.map((c) {
+                          final base = (c['hourly_rate'] as num?)?.toDouble() ?? 0;
+                          final label = base > 0 && pricing != null
+                              ? '${c['name']}  ·  €${calcCourseRate(c, pricing).toStringAsFixed(2)}/lezione'
+                              : c['name'] as String;
                           return DropdownMenuItem(
-                            value: p['id'] as String,
-                            child: Text(
-                              '${p['name']}  ·  $typeLabel  ·  €${price.toStringAsFixed(0)}',
-                            ),
+                            value: c['id'] as String,
+                            child: Text(label),
                           );
                         }).toList(),
-                        onChanged: (v) =>
-                            setState(() { _selectedPlanId = v; }),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // ── Scope toggle ──────────────────────────────────
-                      Text('Validità',
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: cs.onSurface.withAlpha(150))),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _ScopeToggle(
-                            label: 'Aperto',
-                            icon: Icons.all_inclusive,
-                            selected: _isOpen,
-                            color: AppTheme.blue,
-                            onTap: () => setState(() {
-                              _isOpen   = true;
-                              _courseId = null;
-                            }),
-                          ),
-                          const SizedBox(width: 10),
-                          _ScopeToggle(
-                            label: 'Specifico',
-                            icon: Icons.lock_outline,
-                            selected: !_isOpen,
-                            color: AppTheme.cyan,
-                            onTap: () => setState(() => _isOpen = false),
-                          ),
-                        ],
-                      ),
-
-                      // ── Course picker (only when Specifico) ───────────
-                      if (!_isOpen) ...[
-                        const SizedBox(height: 14),
-                        coursesAsync.when(
-                          loading: () =>
-                              const LinearProgressIndicator(),
-                          error: (e, _) => Text('Errore: $e',
-                              style: TextStyle(color: cs.error)),
-                          data: (courses) =>
-                              DropdownButtonFormField<String>(
-                            initialValue: _courseId,
-                            decoration:
-                                const InputDecoration(labelText: 'Corso'),
-                            items: courses
-                                .map((c) => DropdownMenuItem(
-                                      value: c['id'] as String,
-                                      child: Text(c['name'] as String),
-                                    ))
-                                .toList(),
-                            onChanged: (v) =>
-                                setState(() => _courseId = v),
-                          ),
-                        ),
-                      ],
-
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: canSave ? () => _save(plans) : null,
-                          child: _saving
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white),
-                                )
-                              : const Text('Attiva piano'),
-                        ),
+                        onChanged: (v) => setState(() => _courseId = v),
                       ),
                     ],
-                  ),
+
+                    const SizedBox(height: 14),
+
+                    // ── Plan picker ───────────────────────────────────
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedPlanId,
+                      decoration: const InputDecoration(labelText: 'Piano'),
+                      items: plans.map((p) {
+                        final type    = p['type'] as String? ?? '';
+                        final creds   = p['credits'] as int?;
+                        final days    = p['duration_days'] as int?;
+                        final typeLabel = switch (type) {
+                          'unlimited' => 'Illimitato',
+                          'trial'     => 'Prova',
+                          _ => creds != null ? '$creds lezioni' : 'Crediti',
+                        };
+                        final daysLabel = days != null ? ' · $days gg' : '';
+                        return DropdownMenuItem(
+                          value: p['id'] as String,
+                          child: Text('${p['name']}  ·  $typeLabel$daysLabel'),
+                        );
+                      }).toList(),
+                      onChanged: (v) => setState(() => _selectedPlanId = v),
+                    ),
+
+                    // ── Price preview ─────────────────────────────────
+                    if (selectedPlan != null) ...[
+                      const SizedBox(height: 14),
+                      _PricePreview(
+                        rate: rate,
+                        credits: planType == 'credits' ? credits : null,
+                        isOpen: _isOpen,
+                        courseName: selectedCourse?['name'] as String?,
+                        hasHourlyRate: !_isOpen &&
+                            selectedCourse != null &&
+                            ((selectedCourse['hourly_rate'] as num?)?.toDouble() ?? 0) > 0,
+                        pricingLoaded: pricing != null,
+                      ),
+                    ],
+
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: canSave
+                            ? () => _save(plans, courses, pricing)
+                            : null,
+                        child: _saving
+                            ? const SizedBox(
+                                height: 20, width: 20,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
+                            : const Text('Attiva piano'),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Price preview ─────────────────────────────────────────────────────────────
+
+class _PricePreview extends StatelessWidget {
+  final double? rate;
+  final int? credits;
+  final bool isOpen;
+  final String? courseName;
+  final bool hasHourlyRate;
+  final bool pricingLoaded;
+
+  const _PricePreview({
+    this.rate,
+    this.credits,
+    required this.isOpen,
+    this.courseName,
+    required this.hasHourlyRate,
+    required this.pricingLoaded,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    // Course selected but no hourly_rate configured
+    if (!isOpen && !hasHourlyRate) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.withAlpha(30),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.orange.withAlpha(100)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.info_outline, color: Color(0xFFFFB74D), size: 16),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Imposta la tariffa base del corso per il calcolo automatico del prezzo.',
+              style: TextStyle(fontSize: 12, color: Color(0xFFFFB74D)),
+            ),
+          ),
+        ]),
+      );
+    }
+
+    // Open mode but no courses have hourly_rate
+    if (isOpen && rate == null && pricingLoaded) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.withAlpha(30),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.orange.withAlpha(100)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.info_outline, color: Color(0xFFFFB74D), size: 16),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Nessun corso ha una tariffa base configurata. Imposta la tariffa oraria sui corsi per il calcolo automatico.',
+              style: TextStyle(fontSize: 12, color: Color(0xFFFFB74D)),
+            ),
+          ),
+        ]),
+      );
+    }
+
+    if (rate == null) return const SizedBox.shrink();
+
+    final total = credits != null ? rate! * credits! : null;
+    final scope = isOpen ? 'Open' : (courseName ?? 'Corso');
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.blue.withAlpha(20),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.blue.withAlpha(80)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.euro_outlined, size: 14, color: AppTheme.blue),
+            const SizedBox(width: 6),
+            Text('Prezzo calcolato · $scope',
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.blue)),
+          ]),
+          const SizedBox(height: 6),
+          Text(
+            '€${rate!.toStringAsFixed(2)}/lezione'
+            '${credits != null ? ' × $credits lezioni' : ''}',
+            style: TextStyle(fontSize: 13, color: cs.onSurface.withAlpha(200)),
+          ),
+          if (total != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              'Totale: €${total.toStringAsFixed(2)}',
+              style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.blue),
+            ),
+          ],
         ],
       ),
     );

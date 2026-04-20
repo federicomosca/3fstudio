@@ -68,7 +68,7 @@ class OwnerShell extends ConsumerWidget {
     if (loc.startsWith('/owner/clients'))                                        return 2;
     if (loc.startsWith('/owner/manage') || loc.startsWith('/owner/rooms') ||
         loc.startsWith('/owner/team')   || loc.startsWith('/owner/plans') ||
-        loc.startsWith('/owner/report'))                                         { return 3; }
+        loc.startsWith('/owner/report') || loc.startsWith('/owner/pricing'))     { return 3; }
     if (loc.startsWith('/owner/studio'))                                         return 4;
     if (loc.startsWith('/owner/notifications') || loc.startsWith('/owner/profile')) return 5;
     return 0;

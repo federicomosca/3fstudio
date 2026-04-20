@@ -173,10 +173,11 @@ class _AddCourseSheet extends ConsumerStatefulWidget {
 }
 
 class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
-  final _formKey   = GlobalKey<FormState>();
-  final _nameCtrl  = TextEditingController();
-  final _descCtrl  = TextEditingController();
-  final _hoursCtrl = TextEditingController(text: '2');
+  final _formKey    = GlobalKey<FormState>();
+  final _nameCtrl   = TextEditingController();
+  final _descCtrl   = TextEditingController();
+  final _hoursCtrl  = TextEditingController(text: '2');
+  final _rateCtrl   = TextEditingController();
 
   String  _type     = 'group';
   String? _ownerId;
@@ -188,6 +189,7 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
     _nameCtrl.dispose();
     _descCtrl.dispose();
     _hoursCtrl.dispose();
+    _rateCtrl.dispose();
     super.dispose();
   }
 
@@ -208,6 +210,7 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
         'cancel_window_hours': int.tryParse(_hoursCtrl.text.trim()) ?? 2,
         'description':
             _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+        'hourly_rate':         double.tryParse(_rateCtrl.text.trim()) ?? 0,
       });
 
       if (mounted) {
@@ -337,6 +340,26 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
                   final n = int.tryParse(v.trim());
                   if (n == null) return 'Inserisci un numero';
                   if (n < 0) return 'Il valore deve essere ≥ 0';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+
+              // Tariffa oraria base
+              TextFormField(
+                controller: _rateCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Tariffa base per lezione (€)',
+                  prefixIcon: Icon(Icons.euro_outlined),
+                  hintText: 'es. 10',
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return null;
+                  final n = double.tryParse(v.trim());
+                  if (n == null) return 'Inserisci un numero';
+                  if (n < 0) return 'Deve essere ≥ 0';
                   return null;
                 },
               ),

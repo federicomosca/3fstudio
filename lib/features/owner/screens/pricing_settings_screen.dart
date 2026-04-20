@@ -1,0 +1,291 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/providers/studio_provider.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../auth/providers/auth_provider.dart' show supabaseClientProvider;
+import '../providers/pricing_provider.dart';
+
+class PricingSettingsScreen extends ConsumerStatefulWidget {
+  final bool hideAppBar;
+  const PricingSettingsScreen({super.key, this.hideAppBar = false});
+
+  @override
+  ConsumerState<PricingSettingsScreen> createState() =>
+      _PricingSettingsScreenState();
+}
+
+class _PricingSettingsScreenState extends ConsumerState<PricingSettingsScreen> {
+  final _formKey      = GlobalKey<FormState>();
+  final _groupCtrl    = TextEditingController();
+  final _sharedCtrl   = TextEditingController();
+  final _personalCtrl = TextEditingController();
+  final _openCtrl     = TextEditingController();
+
+  bool _initialized = false;
+  bool _saving      = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _groupCtrl.dispose();
+    _sharedCtrl.dispose();
+    _personalCtrl.dispose();
+    _openCtrl.dispose();
+    super.dispose();
+  }
+
+  void _initControllers(Map<String, dynamic> pricing) {
+    if (_initialized) return;
+    _groupCtrl.text    = (pricing['group_surcharge_pct']    as num).toStringAsFixed(0);
+    _sharedCtrl.text   = (pricing['shared_surcharge_pct']   as num).toStringAsFixed(0);
+    _personalCtrl.text = (pricing['personal_surcharge_pct'] as num).toStringAsFixed(0);
+    _openCtrl.text     = (pricing['open_surcharge_pct']     as num).toStringAsFixed(0);
+    _initialized = true;
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    final studioId = ref.read(currentStudioIdProvider);
+    if (studioId == null) return;
+
+    setState(() { _saving = true; _error = null; });
+    try {
+      await ref.read(supabaseClientProvider).from('studios').update({
+        'group_surcharge_pct':    double.parse(_groupCtrl.text.trim()),
+        'shared_surcharge_pct':   double.parse(_sharedCtrl.text.trim()),
+        'personal_surcharge_pct': double.parse(_personalCtrl.text.trim()),
+        'open_surcharge_pct':     double.parse(_openCtrl.text.trim()),
+      }).eq('id', studioId);
+
+      ref.invalidate(studioPricingProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tariffe aggiornate'),
+            backgroundColor: Color(0xFF66BB6A),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pricingAsync = ref.watch(studioPricingProvider);
+
+    return Scaffold(
+      appBar: widget.hideAppBar
+          ? null
+          : AppBar(title: const Text('Tariffe')),
+      body: pricingAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(
+            child: Text('Errore: $e', style: const TextStyle(color: Colors.red))),
+        data: (pricing) {
+          if (pricing != null) _initControllers(pricing);
+          if (!_initialized) return const Center(child: CircularProgressIndicator());
+          return _buildForm(context);
+        },
+      ),
+    );
+  }
+
+  Widget _buildForm(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs    = theme.colorScheme;
+
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          if (widget.hideAppBar) ...[
+            Text('Tariffe',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+          ],
+          Text(
+            'Definisci i moltiplicatori applicati alla tariffa oraria base di '
+            'ciascun corso. Il prezzo di un piano viene calcolato automaticamente '
+            'in fase di assegnazione.',
+            style: TextStyle(color: cs.onSurface.withAlpha(170), fontSize: 13),
+          ),
+          const SizedBox(height: 24),
+
+          _SurchargeField(
+            controller: _groupCtrl,
+            label: 'Rincaro Gruppo',
+            icon: Icons.group_outlined,
+            description: 'Applicato ai corsi di tipo Gruppo',
+          ),
+          const SizedBox(height: 16),
+          _SurchargeField(
+            controller: _sharedCtrl,
+            label: 'Rincaro Condiviso',
+            icon: Icons.people_outline,
+            description: 'Applicato ai corsi di tipo Condiviso',
+          ),
+          const SizedBox(height: 16),
+          _SurchargeField(
+            controller: _personalCtrl,
+            label: 'Rincaro Personal',
+            icon: Icons.person_outline,
+            description: 'Applicato ai corsi di tipo Personal',
+          ),
+          const SizedBox(height: 16),
+          _SurchargeField(
+            controller: _openCtrl,
+            label: 'Rincaro Open',
+            icon: Icons.all_inclusive,
+            description: 'Applicato ai piani Open, calcolato sulla tariffa '
+                'del corso più costoso',
+            accentColor: AppTheme.blue,
+          ),
+
+          if (_error != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cs.errorContainer,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: cs.error.withAlpha(100)),
+              ),
+              child: Row(children: [
+                Icon(Icons.error_outline,
+                    color: cs.onErrorContainer, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(_error!,
+                      style: TextStyle(
+                          color: cs.onErrorContainer, fontSize: 13)),
+                ),
+              ]),
+            ),
+          ],
+
+          const SizedBox(height: 28),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _save,
+              child: _saving
+                  ? const SizedBox(
+                      height: 20, width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Salva tariffe'),
+            ),
+          ),
+
+          const SizedBox(height: 28),
+          _ExampleCard(),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Surcharge field ────────────────────────────────────────────────────────────
+
+class _SurchargeField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final String description;
+  final Color? accentColor;
+  const _SurchargeField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    required this.description,
+    this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final color = accentColor ?? cs.onSurface.withAlpha(180);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(label,
+              style: TextStyle(
+                  fontWeight: FontWeight.w700, fontSize: 13, color: color)),
+        ]),
+        const SizedBox(height: 4),
+        Text(description,
+            style: TextStyle(fontSize: 12, color: cs.onSurface.withAlpha(130))),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            suffixText: '%',
+            isDense: true,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) return 'Campo obbligatorio';
+            final n = double.tryParse(v.trim());
+            if (n == null) return 'Inserisci un numero';
+            if (n < 0) return 'Deve essere ≥ 0';
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+}
+
+// ── Example card ───────────────────────────────────────────────────────────────
+
+class _ExampleCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.lightbulb_outline, size: 16, color: AppTheme.blue),
+            const SizedBox(width: 6),
+            Text('Esempio di calcolo',
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: AppTheme.blue)),
+          ]),
+          const SizedBox(height: 10),
+          Text(
+            'Corso Body Building · tariffa base €10/lezione\n'
+            '  · Gruppo (+20%): €12/lezione\n'
+            '  · Condiviso (+50%): €15/lezione\n'
+            '  · Personal (+100%): €20/lezione\n\n'
+            'Piano Open (tariffa max = €20, rincaro +15%):\n'
+            '  · €23/lezione',
+            style: TextStyle(
+                fontSize: 13,
+                color: cs.onSurface.withAlpha(180),
+                height: 1.6),
+          ),
+        ],
+      ),
+    );
+  }
+}

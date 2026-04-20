@@ -18,7 +18,7 @@ final _courseDetailProvider =
   final client = ref.watch(supabaseClientProvider);
   final data   = await client
       .from('courses')
-      .select('id, name, type, cancel_window_hours, description, users!class_owner_id(id, full_name)')
+      .select('id, name, type, cancel_window_hours, description, hourly_rate, users!class_owner_id(id, full_name)')
       .eq('id', courseId)
       .maybeSingle();
   return data;
@@ -176,6 +176,7 @@ class _CourseBody extends ConsumerWidget {
     final owner         = course['users'] as Map<String, dynamic>?;
     final desc          = course['description'] as String?;
     final cancelHours   = course['cancel_window_hours'] as int?;
+    final hourlyRate    = (course['hourly_rate'] as num?)?.toDouble();
 
     // Modalità cliente: route /client/
     final loc        = GoRouterState.of(context).matchedLocation;
@@ -314,6 +315,11 @@ class _CourseBody extends ConsumerWidget {
                         icon: Icons.timer_outlined,
                         label: 'Disdetta entro $cancelHours h',
                       ),
+                    if (!clientMode && hourlyRate != null && hourlyRate > 0)
+                      _InfoChip(
+                        icon: Icons.euro_outlined,
+                        label: '€${hourlyRate.toStringAsFixed(2)}/lezione',
+                      ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -408,9 +414,14 @@ class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
       text: widget.course['description'] as String? ?? '');
   late final _hoursCtrl = TextEditingController(
       text: (widget.course['cancel_window_hours'] as int? ?? 2).toString());
+  late final _rateCtrl  = TextEditingController(
+      text: ((widget.course['hourly_rate'] as num?)?.toDouble() ?? 0) > 0
+          ? (widget.course['hourly_rate'] as num).toStringAsFixed(2)
+          : '');
 
   late String? _ownerId =
       (widget.course['users'] as Map<String, dynamic>?)?['id'] as String?;
+  late String _type = widget.course['type'] as String? ?? 'group';
   bool    _loading = false;
   String? _error;
 
@@ -419,6 +430,7 @@ class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
     _nameCtrl.dispose();
     _descCtrl.dispose();
     _hoursCtrl.dispose();
+    _rateCtrl.dispose();
     super.dispose();
   }
 
@@ -429,10 +441,12 @@ class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
       final client = ref.read(supabaseClientProvider);
       await client.from('courses').update({
         'name':                _nameCtrl.text.trim(),
+        'type':                _type,
         'description':
             _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
         'cancel_window_hours': int.tryParse(_hoursCtrl.text.trim()) ?? 2,
         'class_owner_id':      _ownerId,
+        'hourly_rate':         double.tryParse(_rateCtrl.text.trim()) ?? 0,
       }).eq('id', widget.courseId);
 
       if (mounted) {
@@ -493,6 +507,32 @@ class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
                 validator: (v) =>
                     v == null || v.trim().isEmpty ? 'Campo obbligatorio' : null,
               ),
+              const SizedBox(height: 16),
+
+              // Tipo
+              Text('Tipo', style: theme.textTheme.labelMedium),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _TypeBtn(
+                    label: 'Gruppo', icon: Icons.group_outlined,
+                    selected: _type == 'group',
+                    onTap: () => setState(() => _type = 'group'),
+                  ),
+                  const SizedBox(width: 8),
+                  _TypeBtn(
+                    label: 'Condiviso', icon: Icons.people_outline,
+                    selected: _type == 'shared',
+                    onTap: () => setState(() => _type = 'shared'),
+                  ),
+                  const SizedBox(width: 8),
+                  _TypeBtn(
+                    label: 'Personal', icon: Icons.person_outline,
+                    selected: _type == 'personal',
+                    onTap: () => setState(() => _type = 'personal'),
+                  ),
+                ],
+              ),
               const SizedBox(height: 12),
 
               // Responsabile
@@ -500,7 +540,7 @@ class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
                 loading: () => const LinearProgressIndicator(),
                 error:   (e, _) => const SizedBox.shrink(),
                 data: (members) => DropdownButtonFormField<String?>(
-                  value: _ownerId,
+                  initialValue: _ownerId,
                   decoration: const InputDecoration(
                     labelText: 'Responsabile',
                     prefixIcon: Icon(Icons.manage_accounts_outlined),
@@ -544,6 +584,26 @@ class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
                   prefixIcon: Icon(Icons.notes_outlined),
                   alignLabelWithHint: true,
                 ),
+              ),
+              const SizedBox(height: 12),
+
+              // Tariffa oraria base
+              TextFormField(
+                controller: _rateCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(
+                  labelText: 'Tariffa base per lezione (€)',
+                  prefixIcon: Icon(Icons.euro_outlined),
+                  hintText: 'es. 10',
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return null;
+                  final n = double.tryParse(v.trim());
+                  if (n == null) return 'Inserisci un numero';
+                  if (n < 0) return 'Deve essere ≥ 0';
+                  return null;
+                },
               ),
 
               if (_error != null) ...[
@@ -890,6 +950,45 @@ class _SectionTitle extends StatelessWidget {
           color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
           letterSpacing: 0.5,
         ));
+  }
+}
+
+class _TypeBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _TypeBtn({required this.label, required this.icon, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? cs.primary : cs.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: selected ? cs.primary : cs.outline),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 18,
+                  color: selected ? cs.onPrimary : cs.onSurface.withAlpha(180)),
+              const SizedBox(height: 4),
+              Text(label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: selected ? cs.onPrimary : cs.onSurface.withAlpha(180),
+                    fontWeight: FontWeight.w600, fontSize: 11)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
