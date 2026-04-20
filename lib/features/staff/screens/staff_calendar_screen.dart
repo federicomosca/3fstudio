@@ -326,12 +326,30 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
 
   Future<void> _proposeDeleteLesson(
       BuildContext context, WidgetRef ref, String lessonId) async {
-    final confirm = await showDialog<bool>(
+    final noteCtrl = TextEditingController();
+    final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Proponi eliminazione'),
-        content: const Text(
-            "Vuoi richiedere l'eliminazione di questa lezione? L'owner dovrà approvare."),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+                "Vuoi richiedere l'eliminazione di questa lezione? L'owner dovrà approvare."),
+            const SizedBox(height: 16),
+            TextField(
+              controller: noteCtrl,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Motivazione (opzionale)',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -343,12 +361,15 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
         ],
       ),
     );
-    if (confirm != true) return;
+    noteCtrl.dispose();
+    if (result != true) return;
     final client = ref.read(supabaseClientProvider);
-    await client
-        .from('lessons')
-        .update({'status': 'delete_pending'})
-        .eq('id', lessonId);
+    await client.from('lessons').update({
+      'status': 'delete_pending',
+      'delete_request_note': noteCtrl.text.trim().isEmpty
+          ? null
+          : noteCtrl.text.trim(),
+    }).eq('id', lessonId);
     ref.invalidate(_staffLessonsForDayProvider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

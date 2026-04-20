@@ -632,9 +632,21 @@ class _AssignPlanSheet extends ConsumerStatefulWidget {
 
 class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
   String? _selectedPlanId;
-  bool    _isOpen   = true;
+  bool    _isOpen            = true;
   String? _courseId;
-  bool    _saving   = false;
+  String  _formula           = 'group';
+  bool    _saving            = false;
+  bool    _infiniteSessions  = false;
+  final   _sessionsCtrl      = TextEditingController(text: '3');
+
+  @override
+  void dispose() {
+    _sessionsCtrl.dispose();
+    super.dispose();
+  }
+
+  int get _effectiveSessions =>
+      _infiniteSessions ? 6 : (int.tryParse(_sessionsCtrl.text) ?? 3).clamp(1, 99);
 
   Future<void> _save(
     List<Map<String, dynamic>> plans,
@@ -655,19 +667,23 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
     final rate = _isOpen
         ? calcOpenRate(courses, pricing ?? {})
         : (selectedCourse != null && pricing != null
-            ? calcCourseRate(selectedCourse, pricing)
+            ? calcCourseRate(selectedCourse, pricing, formulaOverride: _formula)
             : null);
 
     final planType = plan['type'] as String? ?? 'credits';
     final credits  = plan['credits'] as int?;
-    final pricePaid = rate != null && credits != null ? rate * credits : null;
-    final formula = _isOpen ? 'open' : (selectedCourse?['type'] as String?);
+    final duration = plan['duration_days'] as int?;
+    final pricePaid = rate == null
+        ? null
+        : planType == 'unlimited' && duration != null
+            ? rate * _effectiveSessions * (duration / 7)
+            : (credits != null ? rate * credits : null);
+    final formula = _isOpen ? 'open' : _formula;
 
     setState(() => _saving = true);
     try {
-      final db       = ref.read(supabaseClientProvider);
-      final now      = DateTime.now().toUtc();
-      final duration = plan['duration_days'] as int?;
+      final db  = ref.read(supabaseClientProvider);
+      final now = DateTime.now().toUtc();
 
       await db.from('user_plans').insert({
         'user_id':           widget.userId,
@@ -738,7 +754,8 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                 final rate = _isOpen
                     ? (pricing != null ? calcOpenRate(courses, pricing) : null)
                     : (selectedCourse != null && pricing != null
-                        ? calcCourseRate(selectedCourse, pricing)
+                        ? calcCourseRate(selectedCourse, pricing,
+                            formulaOverride: _formula)
                         : null);
 
                 final selectedPlan = _selectedPlanId != null
@@ -771,6 +788,7 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                         onTap: () => setState(() {
                           _isOpen   = true;
                           _courseId = null;
+                          _formula  = 'group';
                         }),
                       ),
                       const SizedBox(width: 10),
@@ -790,17 +808,45 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                         initialValue: _courseId,
                         decoration: const InputDecoration(labelText: 'Corso'),
                         items: courses.map((c) {
-                          final base = (c['hourly_rate'] as num?)?.toDouble() ?? 0;
-                          final label = base > 0 && pricing != null
-                              ? '${c['name']}  ·  €${calcCourseRate(c, pricing).toStringAsFixed(2)}/lezione'
-                              : c['name'] as String;
                           return DropdownMenuItem(
                             value: c['id'] as String,
-                            child: Text(label),
+                            child: Text(c['name'] as String),
                           );
                         }).toList(),
                         onChanged: (v) => setState(() => _courseId = v),
                       ),
+                      const SizedBox(height: 14),
+                      Text('Modalità',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface.withAlpha(150))),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        _ScopeToggle(
+                          label: 'Group',
+                          icon: Icons.group_outlined,
+                          selected: _formula == 'group',
+                          color: AppTheme.blue,
+                          onTap: () => setState(() => _formula = 'group'),
+                        ),
+                        const SizedBox(width: 8),
+                        _ScopeToggle(
+                          label: 'Shared',
+                          icon: Icons.people_outline,
+                          selected: _formula == 'shared',
+                          color: AppTheme.cyan,
+                          onTap: () => setState(() => _formula = 'shared'),
+                        ),
+                        const SizedBox(width: 8),
+                        _ScopeToggle(
+                          label: 'Personal',
+                          icon: Icons.person_outline,
+                          selected: _formula == 'personal',
+                          color: Colors.deepPurple.shade300,
+                          onTap: () => setState(() => _formula = 'personal'),
+                        ),
+                      ]),
                     ],
 
                     const SizedBox(height: 14),
@@ -827,6 +873,51 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                       onChanged: (v) => setState(() => _selectedPlanId = v),
                     ),
 
+                    // ── Frequency picker (open unlimited only) ────────
+                    if (_isOpen && planType == 'unlimited' && selectedPlan != null) ...[
+                      const SizedBox(height: 14),
+                      Text('Frequenza stimata',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface.withAlpha(150))),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 80,
+                            child: TextField(
+                              controller: _sessionsCtrl,
+                              enabled: !_infiniteSessions,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: '×/sett.',
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 10),
+                              ),
+                              onChanged: (_) => setState(() {}),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          GestureDetector(
+                            onTap: () => setState(
+                                () => _infiniteSessions = !_infiniteSessions),
+                            child: Row(
+                              children: [
+                                Checkbox(
+                                  value: _infiniteSessions,
+                                  onChanged: (v) => setState(
+                                      () => _infiniteSessions = v ?? false),
+                                ),
+                                const Text('∞  (6×/sett.)'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
                     // ── Price preview ─────────────────────────────────
                     if (selectedPlan != null) ...[
                       const SizedBox(height: 14),
@@ -835,10 +926,17 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                         credits: planType == 'credits' ? credits : null,
                         isOpen: _isOpen,
                         courseName: selectedCourse?['name'] as String?,
+                        formula: _formula,
                         hasHourlyRate: !_isOpen &&
                             selectedCourse != null &&
                             ((selectedCourse['hourly_rate'] as num?)?.toDouble() ?? 0) > 0,
                         pricingLoaded: pricing != null,
+                        sessionsPerWeek: (_isOpen && planType == 'unlimited')
+                            ? _effectiveSessions
+                            : null,
+                        durationDays: (_isOpen && planType == 'unlimited')
+                            ? (selectedPlan['duration_days'] as int?)
+                            : null,
                       ),
                     ],
 
@@ -875,16 +973,22 @@ class _PricePreview extends StatelessWidget {
   final int? credits;
   final bool isOpen;
   final String? courseName;
+  final String formula;
   final bool hasHourlyRate;
   final bool pricingLoaded;
+  final int? sessionsPerWeek;
+  final int? durationDays;
 
   const _PricePreview({
     this.rate,
     this.credits,
     required this.isOpen,
     this.courseName,
+    required this.formula,
     required this.hasHourlyRate,
     required this.pricingLoaded,
+    this.sessionsPerWeek,
+    this.durationDays,
   });
 
   @override
@@ -937,8 +1041,24 @@ class _PricePreview extends StatelessWidget {
 
     if (rate == null) return const SizedBox.shrink();
 
-    final total = credits != null ? rate! * credits! : null;
-    final scope = isOpen ? 'Open' : (courseName ?? 'Corso');
+    final isUnlimited = sessionsPerWeek != null && durationDays != null;
+    final total = isUnlimited
+        ? rate! * sessionsPerWeek! * (durationDays! / 7)
+        : (credits != null ? rate! * credits! : null);
+
+    final formulaLabel = switch (formula) {
+      'personal' => 'Personal',
+      'shared'   => 'Shared',
+      _          => 'Group',
+    };
+    final scope = isOpen ? 'Open' : '${courseName ?? 'Corso'} · $formulaLabel';
+
+    final detailLine = isUnlimited
+        ? '€${rate!.toStringAsFixed(2)}/lezione  ×  '
+          '$sessionsPerWeek×/sett.  ×  '
+          '${(durationDays! / 7).toStringAsFixed(1)} sett.'
+        : '€${rate!.toStringAsFixed(2)}/lezione'
+          '${credits != null ? ' × $credits lezioni' : ''}';
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -953,18 +1073,15 @@ class _PricePreview extends StatelessWidget {
           Row(children: [
             const Icon(Icons.euro_outlined, size: 14, color: AppTheme.blue),
             const SizedBox(width: 6),
-            Text('Prezzo calcolato · $scope',
+            Text('Prezzo stimato · $scope',
                 style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: AppTheme.blue)),
           ]),
           const SizedBox(height: 6),
-          Text(
-            '€${rate!.toStringAsFixed(2)}/lezione'
-            '${credits != null ? ' × $credits lezioni' : ''}',
-            style: TextStyle(fontSize: 13, color: cs.onSurface.withAlpha(200)),
-          ),
+          Text(detailLine,
+              style: TextStyle(fontSize: 13, color: cs.onSurface.withAlpha(200))),
           if (total != null) ...[
             const SizedBox(height: 2),
             Text(

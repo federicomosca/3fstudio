@@ -17,14 +17,19 @@ class StudiosScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: hideAppBar ? null : AppBar(title: const Text('Sedi')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showStudioSheet(context, ref),
+        icon: const Icon(Icons.add),
+        label: const Text('Nuova sede'),
+      ),
       body: studiosAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
             child: Text('Errore: $e', style: const TextStyle(color: Colors.red))),
         data: (sedi) => sedi.isEmpty
-            ? const _EmptyStudios()
+            ? _EmptyStudios(onAdd: () => _showStudioSheet(context, ref))
             : ListView.separated(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                 itemCount: sedi.length,
                 separatorBuilder: (context, i) => const SizedBox(height: 8),
                 itemBuilder: (context, i) => _StudioTile(
@@ -102,7 +107,8 @@ class StudiosScreen extends ConsumerWidget {
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 class _EmptyStudios extends StatelessWidget {
-  const _EmptyStudios();
+  final VoidCallback onAdd;
+  const _EmptyStudios({required this.onAdd});
 
   @override
   Widget build(BuildContext context) {
@@ -130,6 +136,12 @@ class _EmptyStudios extends StatelessWidget {
                         .colorScheme
                         .onSurface
                         .withAlpha(150))),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add),
+              label: const Text('Aggiungi sede'),
+            ),
           ],
         ),
       ),

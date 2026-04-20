@@ -662,7 +662,7 @@ final _allPendingLessonsProvider =
   final data = await client
       .from('lessons')
       .select(
-          'id, starts_at, ends_at, capacity, review_note, status, '
+          'id, starts_at, ends_at, capacity, review_note, status, delete_request_note, '
           'courses!inner(id, name, studio_id), '
           'users!proposed_by(full_name)')
       .inFilter('status', ['pending', 'delete_pending'])
@@ -972,12 +972,14 @@ class _LessonProposalsTab extends ConsumerWidget {
                 final proposerLabel = proposer != null
                     ? ' · Da: ${proposer['full_name']}'
                     : '';
+                final deleteNote = l['delete_request_note'] as String?;
                 return _PendingCard(
                   title: course['name'] as String,
                   subtitle: dateFmt.format(start),
                   detail: isDelete
                       ? 'Richiesta eliminazione$proposerLabel'
                       : 'Capacità: $cap posti$proposerLabel',
+                  note: isDelete ? deleteNote : null,
                   approveLabel: isDelete ? 'Elimina' : 'Approva',
                   rejectLabel: isDelete ? 'Mantieni' : 'Rifiuta',
                   approveDestructive: isDelete,
@@ -1059,6 +1061,7 @@ class _PendingCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final String? detail;
+  final String? note;
   final String approveLabel;
   final String rejectLabel;
   final bool approveDestructive;
@@ -1069,6 +1072,7 @@ class _PendingCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.detail,
+    this.note,
     this.approveLabel = 'Approva',
     this.rejectLabel = 'Rifiuta',
     this.approveDestructive = false,
@@ -1123,6 +1127,30 @@ class _PendingCard extends StatelessWidget {
                 style: TextStyle(
                     fontSize: 12,
                     color: theme.colorScheme.onSurface.withAlpha(150))),
+          if (note != null && note!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.orange.withAlpha(20),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withAlpha(60)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.comment_outlined,
+                      size: 13, color: Color(0xFFFFB74D)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(note!,
+                        style: const TextStyle(
+                            fontSize: 12, color: Color(0xFFFFB74D))),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             children: [

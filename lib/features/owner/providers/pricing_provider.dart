@@ -16,9 +16,13 @@ final studioPricingProvider =
       .maybeSingle();
 });
 
-double calcCourseRate(Map<String, dynamic> course, Map<String, dynamic> pricing) {
+double calcCourseRate(
+  Map<String, dynamic> course,
+  Map<String, dynamic> pricing, {
+  String? formulaOverride,
+}) {
   final base = (course['hourly_rate'] as num?)?.toDouble() ?? 0;
-  final type = course['type'] as String? ?? 'group';
+  final type = formulaOverride ?? course['type'] as String? ?? 'group';
   final pct = switch (type) {
     'personal' => (pricing['personal_surcharge_pct'] as num?)?.toDouble() ?? 100,
     'shared'   => (pricing['shared_surcharge_pct']   as num?)?.toDouble() ?? 50,
