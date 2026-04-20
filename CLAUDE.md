@@ -190,7 +190,7 @@ cd tool/generate_icon && dart run bin/generate_icon.dart
 
 ```yaml
 supabase_flutter: ^2.0.0
-flutter_riverpod: ^2.6.1
+flutter_riverpod: ^3.3.1
 go_router: ^14.6.0
 table_calendar: ^3.1.2
 intl: ^0.19.0

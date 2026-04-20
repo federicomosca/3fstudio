@@ -5,7 +5,7 @@ import '../../auth/providers/auth_provider.dart';
 
 /// Conteggio richieste in attesa (proposte lezione + richieste eliminazione + prenotazioni prova).
 /// Usato dal badge nella nav e nell'AppBar del calendario owner.
-final pendingLessonsCountProvider = FutureProvider<int>((ref) async {
+final pendingLessonsCountProvider = FutureProvider.autoDispose<int>((ref) async {
   final studioId = ref.watch(currentStudioIdProvider);
   if (studioId == null) return 0;
   final client = ref.watch(supabaseClientProvider);

@@ -5,7 +5,7 @@ import '../../auth/providers/auth_provider.dart';
 
 /// Numero di richieste piano in attesa per lo studio corrente.
 /// Usato dal badge sulla nav dell'owner e dalla PlansScreen.
-final pendingPlanRequestsCountProvider = FutureProvider<int>((ref) async {
+final pendingPlanRequestsCountProvider = FutureProvider.autoDispose<int>((ref) async {
   final studioId = ref.watch(currentStudioIdProvider);
   if (studioId == null) return 0;
   final client = ref.watch(supabaseClientProvider);

@@ -31,7 +31,7 @@ final _courseLessonsProvider =
   final now    = DateTime.now().toUtc().toIso8601String();
   final data   = await client
       .from('lessons')
-      .select('id, starts_at, ends_at, capacity, bookings(count)')
+      .select('id, starts_at, ends_at, capacity, bookings(status)')
       .eq('course_id', courseId)
       .eq('status', 'active')
       .gte('starts_at', now)
@@ -183,6 +183,12 @@ class _CourseBody extends ConsumerWidget {
     final bookedIds  = clientMode
         ? (ref.watch(_myCourseLessonBookingsProvider(courseId))
               .whenOrNull(data: (ids) => ids) ?? {})
+        : const <String>{};
+    final clientHasPlan = clientMode
+        ? (ref.watch(hasActivePlanProvider).whenOrNull(data: (v) => v) ?? false)
+        : false;
+    final enrolledIds = clientMode
+        ? (ref.watch(userEnrolledCourseIdsProvider).whenOrNull(data: (ids) => ids) ?? <String>{})
         : const <String>{};
 
     void onBookingChanged() {
@@ -366,8 +372,8 @@ class _CourseBody extends ConsumerWidget {
                     itemBuilder: (context, i) => _LessonRow(
                       lesson: lessons[i],
                       clientMode: clientMode,
-                      isBooked: bookedIds.contains(
-                          lessons[i]['id'] as String),
+                      isBooked: bookedIds.contains(lessons[i]['id'] as String),
+                      hasActivePlan: clientHasPlan && enrolledIds.contains(courseId),
                       onBookingChanged: onBookingChanged,
                     ),
                   ),
@@ -590,6 +596,7 @@ class _LessonRow extends ConsumerStatefulWidget {
   final Map<String, dynamic> lesson;
   final bool clientMode;
   final bool isBooked;
+  final bool hasActivePlan;
   final VoidCallback onBookingChanged;
 
   const _LessonRow({
@@ -597,6 +604,7 @@ class _LessonRow extends ConsumerStatefulWidget {
     required this.clientMode,
     required this.isBooked,
     required this.onBookingChanged,
+    this.hasActivePlan = false,
   });
 
   @override
@@ -628,6 +636,29 @@ class _LessonRowState extends ConsumerState<_LessonRow> {
             content: Text('Errore: $e'),
             backgroundColor: Colors.red,
           ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _bookTrial() async {
+    setState(() => _loading = true);
+    try {
+      await ref
+          .read(bookingNotifierProvider.notifier)
+          .bookTrialLesson(widget.lesson['id'] as String);
+      widget.onBookingChanged();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Richiesta prova inviata!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -667,10 +698,8 @@ class _LessonRowState extends ConsumerState<_LessonRow> {
     final start    = DateTime.parse(lesson['starts_at'] as String).toLocal();
     final end      = DateTime.parse(lesson['ends_at']   as String).toLocal();
     final cap      = lesson['capacity'] as int;
-    final bookings = lesson['bookings'] as List? ?? [];
-    final count    = bookings.isNotEmpty
-        ? (bookings.first['count'] as int? ?? 0)
-        : 0;
+    final bookings = (lesson['bookings'] as List? ?? []).cast<Map<String, dynamic>>();
+    final count    = bookings.where((b) => b['status'] != 'cancelled').length;
     final isFull   = count >= cap && !widget.isBooked;
 
     final dateFmt = DateFormat('EEE d MMM', 'it_IT');
@@ -803,18 +832,41 @@ class _LessonRowState extends ConsumerState<_LessonRow> {
                           child: const Text('Annulla',
                               style: TextStyle(fontSize: 12)),
                         )
-                      : ElevatedButton(
-                          onPressed: isFull ? null : _book,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 0),
-                            minimumSize: Size.zero,
-                          ),
-                          child: Text(
-                            isFull ? 'Completo' : 'Prenota',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
+                      : isFull
+                          ? ElevatedButton(
+                              onPressed: null,
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 0),
+                                minimumSize: Size.zero,
+                              ),
+                              child: const Text('Completo',
+                                  style: TextStyle(fontSize: 12)),
+                            )
+                          : !widget.hasActivePlan
+                              ? OutlinedButton(
+                                  onPressed: _bookTrial,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFFFFB74D),
+                                    side: BorderSide(
+                                        color: Colors.orange.withAlpha(180)),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 0),
+                                    minimumSize: Size.zero,
+                                  ),
+                                  child: const Text('Prova',
+                                      style: TextStyle(fontSize: 12)),
+                                )
+                              : ElevatedButton(
+                                  onPressed: _book,
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 0),
+                                    minimumSize: Size.zero,
+                                  ),
+                                  child: const Text('Prenota',
+                                      style: TextStyle(fontSize: 12)),
+                                ),
             ),
           ],
         ],

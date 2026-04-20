@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/owner/providers/plan_requests_provider.dart';
 import '../../features/owner/providers/pending_lessons_count_provider.dart';
+import '../../features/shared/providers/notifications_provider.dart';
 import 'sede_selector_bar.dart';
 
 class OwnerShell extends ConsumerWidget {
@@ -51,9 +52,9 @@ class OwnerShell extends ConsumerWidget {
             selectedIcon: Icon(Icons.home),
             label: 'Studio',
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.notifications_outlined),
-            selectedIcon: Icon(Icons.notifications),
+          NavigationDestination(
+            icon: _NotificationsBadge(selected: false),
+            selectedIcon: _NotificationsBadge(selected: true),
             label: 'Notifiche',
           ),
         ],
@@ -99,6 +100,28 @@ class _CalendarioBadge extends ConsumerWidget {
 
     final icon = Icon(
       selected ? Icons.calendar_month : Icons.calendar_month_outlined,
+    );
+
+    if (count == 0) return icon;
+
+    return Badge(
+      label: Text('$count'),
+      child: icon,
+    );
+  }
+}
+
+// Badge sulla voce "Notifiche" che mostra il numero di notifiche non lette.
+class _NotificationsBadge extends ConsumerWidget {
+  final bool selected;
+  const _NotificationsBadge({required this.selected});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(unreadNotificationsCountProvider);
+
+    final icon = Icon(
+      selected ? Icons.notifications : Icons.notifications_outlined,
     );
 
     if (count == 0) return icon;

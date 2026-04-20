@@ -24,13 +24,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedDay    = ref.watch(selectedDayProvider);
-    final lessonDays     = ref.watch(lessonDaysProvider(_focusedMonth));
-    final lessons        = ref.watch(lessonsForDayProvider(selectedDay));
-    final userBookings  = ref.watch(userBookingsProvider);
-    final hasActivePlan = ref.watch(hasActivePlanProvider);
-    final pendingTrials = ref.watch(userPendingTrialLessonsProvider);
-    final userWaitlist  = ref.watch(userWaitlistProvider);
+    // Only the calendar widget needs these two providers.
+    // Booking-related providers are isolated in _LessonList below.
+    final selectedDay = ref.watch(selectedDayProvider);
+    final lessonDays  = ref.watch(lessonDaysProvider(_focusedMonth));
 
     return Scaffold(
       appBar: AppBar(
@@ -39,7 +36,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       ),
       body: Column(
         children: [
-          // Calendario
           TableCalendar(
             firstDay: DateTime.utc(2024, 1, 1),
             lastDay: DateTime.utc(2027, 12, 31),
@@ -54,7 +50,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               titleCentered: true,
             ),
             calendarStyle: const CalendarStyle(
-              // Oggi: cerchio lime con testo scuro
               todayDecoration: BoxDecoration(
                 color: AppTheme.lime,
                 shape: BoxShape.circle,
@@ -63,7 +58,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 color: Colors.white,
                 fontWeight: FontWeight.w800,
               ),
-              // Selezionato: cerchio charcoal con testo bianco
               selectedDecoration: BoxDecoration(
                 color: AppTheme.charcoal,
                 shape: BoxShape.circle,
@@ -72,7 +66,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
               ),
-              // Marker lezioni: puntino lime
               markerDecoration: BoxDecoration(
                 color: AppTheme.lime,
                 shape: BoxShape.circle,
@@ -94,7 +87,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             },
           ),
           const Divider(height: 1),
-          // Header giorno selezionato
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Align(
@@ -107,65 +99,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               ),
             ),
           ),
-          // Lista lezioni
           Expanded(
-            child: lessons.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(
-                child: Text('Errore: $e',
-                    style: const TextStyle(color: Colors.red)),
-              ),
-              data: (lessonList) {
-                if (lessonList.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.event_busy,
-                            size: 48,
-                            color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Nessuna lezione programmata',
-                          style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface.withAlpha(150)),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                final bookedIds      = userBookings.whenOrNull(data: (ids) => ids) ?? {};
-                final clientHasPlan  = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
-                final pendingIds     = pendingTrials.whenOrNull(data: (ids) => ids) ?? {};
-                final waitlistIds    = userWaitlist.whenOrNull(data: (ids) => ids) ?? {};
-
-                return ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  itemCount: lessonList.length,
-                  itemBuilder: (context, index) {
-                    final lesson         = lessonList[index];
-                    final isBooked       = bookedIds.contains(lesson.id);
-                    final isPendingTrial = pendingIds.contains(lesson.id);
-                    final isOnWaitlist   = waitlistIds.contains(lesson.id);
-
-                    return LessonCard(
-                      lesson: lesson,
-                      isBooked: isBooked,
-                      hasActivePlan: clientHasPlan,
-                      isPendingTrial: isPendingTrial,
-                      isOnWaitlist: isOnWaitlist,
-                      bookedCount: lesson.bookedCount,
-                      onBook: () => _book(lesson.id),
-                      onCancel: () => _cancel(lesson),
-                      onBookTrial: () => _bookTrial(lesson),
-                      onJoinWaitlist: () => _joinWaitlist(lesson.id),
-                      onLeaveWaitlist: () => _leaveWaitlist(lesson.id),
-                    );
-                  },
-                );
-              },
+            child: _LessonList(
+              selectedDay: selectedDay,
+              onBook: _book,
+              onCancel: _cancel,
+              onBookTrial: _bookTrial,
+              onJoinWaitlist: _joinWaitlist,
+              onLeaveWaitlist: _leaveWaitlist,
             ),
           ),
         ],
@@ -224,9 +165,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       await ref.read(bookingNotifierProvider.notifier).bookTrialLesson(lesson.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Richiesta inviata per ${lesson.courseName}!'),
-          ),
+          SnackBar(content: Text('Richiesta inviata per ${lesson.courseName}!')),
         );
       }
     } catch (e) {
@@ -249,8 +188,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Errore: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -272,8 +210,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 '$hours ore prima della lezione.\n\n'
                 'Annullando ora verrà scalato 1 credito dal tuo piano.',
               )
-            : const Text(
-                'Sei sicuro di voler annullare questa prenotazione?'),
+            : const Text('Sei sicuro di voler annullare questa prenotazione?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -350,5 +287,94 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         );
       }
     }
+  }
+}
+
+// Isolato dalla TableCalendar: si ricostruisce solo quando cambiano le lezioni
+// del giorno o lo stato booking, senza toccare il calendario sopra.
+class _LessonList extends ConsumerWidget {
+  const _LessonList({
+    required this.selectedDay,
+    required this.onBook,
+    required this.onCancel,
+    required this.onBookTrial,
+    required this.onJoinWaitlist,
+    required this.onLeaveWaitlist,
+  });
+
+  final DateTime selectedDay;
+  final void Function(String) onBook;
+  final void Function(Lesson) onCancel;
+  final void Function(Lesson) onBookTrial;
+  final void Function(String) onJoinWaitlist;
+  final void Function(String) onLeaveWaitlist;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lessons       = ref.watch(lessonsForDayProvider(selectedDay));
+    final userBookings  = ref.watch(userBookingsProvider);
+    final hasActivePlan = ref.watch(hasActivePlanProvider);
+    final enrolled      = ref.watch(userEnrolledCourseIdsProvider);
+    final pending       = ref.watch(userPendingTrialLessonsProvider);
+    final waitlist      = ref.watch(userWaitlistProvider);
+
+    return lessons.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Text('Errore: $e', style: const TextStyle(color: Colors.red)),
+      ),
+      data: (lessonList) {
+        if (lessonList.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.event_busy,
+                    size: 48,
+                    color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
+                const SizedBox(height: 12),
+                Text(
+                  'Nessuna lezione programmata',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface.withAlpha(150)),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final bookedIds     = userBookings.whenOrNull(data: (ids) => ids) ?? {};
+        final clientHasPlan = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
+        final enrolledIds   = enrolled.whenOrNull(data: (ids) => ids) ?? {};
+        final pendingIds    = pending.whenOrNull(data: (ids) => ids) ?? {};
+        final waitlistIds   = waitlist.whenOrNull(data: (ids) => ids) ?? {};
+
+        return ListView.builder(
+          padding: const EdgeInsets.only(bottom: 100),
+          itemCount: lessonList.length,
+          itemBuilder: (context, index) {
+            final lesson        = lessonList[index];
+            final isBooked      = bookedIds.contains(lesson.id);
+            final isPending     = pendingIds.contains(lesson.id);
+            final isOnWaitlist  = waitlistIds.contains(lesson.id);
+
+            return LessonCard(
+              key: ValueKey(lesson.id),
+              lesson: lesson,
+              isBooked: isBooked,
+              hasActivePlan: clientHasPlan && enrolledIds.contains(lesson.courseId),
+              isPendingTrial: isPending,
+              isOnWaitlist: isOnWaitlist,
+              bookedCount: lesson.bookedCount,
+              onBook: () => onBook(lesson.id),
+              onCancel: () => onCancel(lesson),
+              onBookTrial: () => onBookTrial(lesson),
+              onJoinWaitlist: () => onJoinWaitlist(lesson.id),
+              onLeaveWaitlist: () => onLeaveWaitlist(lesson.id),
+            );
+          },
+        );
+      },
+    );
   }
 }

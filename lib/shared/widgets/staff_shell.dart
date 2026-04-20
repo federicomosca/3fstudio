@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/shared/providers/notifications_provider.dart';
 import 'sede_selector_bar.dart';
 
 /// Shell per trainer (e course owner — determinato da class_owner_id sul corso).
@@ -23,25 +24,25 @@ class StaffShell extends ConsumerWidget {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index(loc),
         onDestinationSelected: (i) => _nav(context, i),
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon:         Icon(Icons.calendar_month_outlined),
             selectedIcon: Icon(Icons.calendar_month),
             label:        'Calendario',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon:         Icon(Icons.fitness_center_outlined),
             selectedIcon: Icon(Icons.fitness_center),
             label:        'Corsi',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon:         Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
             label:        'Studio',
           ),
           NavigationDestination(
-            icon:         Icon(Icons.notifications_outlined),
-            selectedIcon: Icon(Icons.notifications),
+            icon:         _NotificationsBadge(selected: false),
+            selectedIcon: _NotificationsBadge(selected: true),
             label:        'Notifiche',
           ),
         ],
@@ -64,5 +65,20 @@ class StaffShell extends ConsumerWidget {
       case 2: context.go('/staff/studio');
       case 3: context.go('/staff/notifications');
     }
+  }
+}
+
+class _NotificationsBadge extends ConsumerWidget {
+  final bool selected;
+  const _NotificationsBadge({required this.selected});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(unreadNotificationsCountProvider);
+    final icon  = Icon(
+      selected ? Icons.notifications : Icons.notifications_outlined,
+    );
+    if (count == 0) return icon;
+    return Badge(label: Text('$count'), child: icon);
   }
 }

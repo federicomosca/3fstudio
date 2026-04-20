@@ -8,7 +8,13 @@ import '../../../features/auth/providers/auth_provider.dart';
 
 // ── Period state ──────────────────────────────────────────────────────────────
 
-final _reportPeriodProvider = StateProvider<int>((ref) => 30);
+class _ReportPeriodNotifier extends Notifier<int> {
+  @override
+  int build() => 30;
+}
+
+final _reportPeriodProvider =
+    NotifierProvider<_ReportPeriodNotifier, int>(_ReportPeriodNotifier.new);
 
 // ── Data model ────────────────────────────────────────────────────────────────
 

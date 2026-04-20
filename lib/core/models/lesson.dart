@@ -28,11 +28,10 @@ class Lesson {
   factory Lesson.fromJson(Map<String, dynamic> json) {
     final course    = json['courses'] as Map<String, dynamic>;
     final trainer   = course['users'] as Map<String, dynamic>?;
-    final bookings  = json['bookings'] as List?;
+    final bookings  = (json['bookings'] as List?)?.cast<Map<String, dynamic>>();
     final waitlist  = json['waitlist'] as List?;
-    final count     = bookings != null && bookings.isNotEmpty
-        ? (bookings.first['count'] as int? ?? 0)
-        : 0;
+    final count     = bookings == null ? 0
+        : bookings.where((b) => b['status'] != 'cancelled').length;
     final wCount    = waitlist != null && waitlist.isNotEmpty
         ? (waitlist.first['count'] as int? ?? 0)
         : 0;
@@ -47,7 +46,7 @@ class Lesson {
       capacity:           json['capacity'] as int,
       bookedCount:        count,
       waitlistCount:      wCount,
-      cancellationHours:  course['cancellation_hours'] as int? ?? 0,
+      cancellationHours:  course['cancel_window_hours'] as int? ?? 0,
     );
   }
 }

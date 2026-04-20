@@ -6,59 +6,71 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/providers/studio_provider.dart';
 import '../../../features/auth/providers/auth_provider.dart';
+import '../providers/notifications_provider.dart';
 
-// ── Provider ──────────────────────────────────────────────────────────────────
-// Richiede la tabella: notifications(id, studio_id, title, body, created_at, created_by)
-// SQL da eseguire su Supabase:
-//   CREATE TABLE notifications (
-//     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-//     studio_id uuid REFERENCES studios(id),
-//     title text NOT NULL,
-//     body text,
-//     created_at timestamptz DEFAULT now(),
-//     created_by uuid REFERENCES users(id)
-//   );
-//   ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-//   CREATE POLICY "users see own studio notifs"
-//     ON notifications FOR SELECT
-//     USING (studio_id IN (
-//       SELECT studio_id FROM user_studio_roles WHERE user_id = auth.uid()
-//     ));
-//   CREATE POLICY "owners can send notifications"
-//     ON notifications FOR INSERT
-//     WITH CHECK (studio_id IN (
-//       SELECT studio_id FROM user_studio_roles
-//       WHERE user_id = auth.uid() AND role = 'owner'
-//     ));
-
-final _notificationsProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final studioId = ref.watch(currentStudioIdProvider);
-  if (studioId == null) return [];
-  final client = ref.watch(supabaseClientProvider);
-
-  try {
-    final data = await client
-        .from('notifications')
-        .select('id, title, body, created_at, users!created_by(full_name)')
-        .eq('studio_id', studioId)
-        .order('created_at', ascending: false)
-        .limit(50);
-    return (data as List).cast<Map<String, dynamic>>();
-  } catch (_) {
-    // Tabella non ancora creata
-    return [];
-  }
-});
+// SQL da eseguire su Supabase (una tantum):
+//
+// CREATE TABLE notifications (
+//   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+//   studio_id uuid REFERENCES studios(id) ON DELETE CASCADE,
+//   title text NOT NULL,
+//   body text,
+//   created_at timestamptz DEFAULT now(),
+//   created_by uuid REFERENCES users(id)
+// );
+// ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+// CREATE POLICY "members see own studio notifs"
+//   ON notifications FOR SELECT
+//   USING (studio_id IN (
+//     SELECT studio_id FROM user_studio_roles WHERE user_id = auth.uid()
+//   ));
+// CREATE POLICY "owners can insert notifs"
+//   ON notifications FOR INSERT
+//   WITH CHECK (studio_id IN (
+//     SELECT studio_id FROM user_studio_roles
+//     WHERE user_id = auth.uid() AND role = 'gym_owner'
+//   ));
+//
+// ALTER TABLE public.users
+//   ADD COLUMN IF NOT EXISTS notifications_seen_at timestamptz DEFAULT now();
+//
+// CREATE POLICY "user updates own seen_at"
+//   ON public.users FOR UPDATE
+//   USING (id = auth.uid())
+//   WITH CHECK (id = auth.uid());
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-class NotificationsScreen extends ConsumerWidget {
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final notifsAsync = ref.watch(_notificationsProvider);
+  ConsumerState<NotificationsScreen> createState() =>
+      _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _markSeen());
+  }
+
+  Future<void> _markSeen() async {
+    final user   = ref.read(currentUserProvider);
+    final client = ref.read(supabaseClientProvider);
+    if (user == null) return;
+    try {
+      await client.from('users').update({
+        'notifications_seen_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', user.id);
+      ref.invalidate(notificationsSeenAtProvider);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final notifsAsync = ref.watch(notificationsProvider);
     final loc         = GoRouterState.of(context).uri.path;
     final isOwner     = loc.startsWith('/owner');
 
@@ -66,7 +78,7 @@ class NotificationsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Notifiche')),
       floatingActionButton: isOwner
           ? FloatingActionButton.extended(
-              onPressed: () => _openSendSheet(context, ref),
+              onPressed: () => _openSendSheet(context),
               icon: const Icon(Icons.send_outlined),
               label: const Text('Invia comunicazione'),
             )
@@ -124,13 +136,11 @@ class NotificationsScreen extends ConsumerWidget {
     );
   }
 
-  void _openSendSheet(BuildContext context, WidgetRef ref) {
+  void _openSendSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) => _SendNotifSheet(
-        onSent: () => ref.invalidate(_notificationsProvider),
-      ),
+      builder: (ctx) => const _SendNotifSheet(),
     );
   }
 }
@@ -138,15 +148,14 @@ class NotificationsScreen extends ConsumerWidget {
 // ── Send sheet ────────────────────────────────────────────────────────────────
 
 class _SendNotifSheet extends ConsumerStatefulWidget {
-  final VoidCallback onSent;
-  const _SendNotifSheet({required this.onSent});
+  const _SendNotifSheet();
 
   @override
   ConsumerState<_SendNotifSheet> createState() => _SendNotifSheetState();
 }
 
 class _SendNotifSheetState extends ConsumerState<_SendNotifSheet> {
-  final _formKey  = GlobalKey<FormState>();
+  final _formKey   = GlobalKey<FormState>();
   final _titleCtrl = TextEditingController();
   final _bodyCtrl  = TextEditingController();
   bool _sending = false;
@@ -177,7 +186,6 @@ class _SendNotifSheetState extends ConsumerState<_SendNotifSheet> {
         'created_by': user?.id,
       });
 
-      widget.onSent();
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -203,7 +211,6 @@ class _SendNotifSheetState extends ConsumerState<_SendNotifSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Handle
             Center(
               child: Container(
                 width: 40,
@@ -225,7 +232,6 @@ class _SendNotifSheetState extends ConsumerState<_SendNotifSheet> {
             ),
             const SizedBox(height: 20),
 
-            // Title field
             TextFormField(
               controller: _titleCtrl,
               autofocus: true,
@@ -239,7 +245,6 @@ class _SendNotifSheetState extends ConsumerState<_SendNotifSheet> {
             ),
             const SizedBox(height: 14),
 
-            // Body field
             TextFormField(
               controller: _bodyCtrl,
               minLines: 3,
@@ -253,7 +258,6 @@ class _SendNotifSheetState extends ConsumerState<_SendNotifSheet> {
             ),
             const SizedBox(height: 20),
 
-            // Send button
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(

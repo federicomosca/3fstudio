@@ -26,7 +26,9 @@
       "Bash(class_owner)",
       "Bash(courses.class_owner_id)",
       "Bash(supabase migration *)",
-      "Bash(supabase db *)"
+      "Bash(supabase db *)",
+      "Bash(flutter clean *)",
+      "Bash(flutter test *)"
     ]
   }
 }

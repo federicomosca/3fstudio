@@ -1,9 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../calendar/providers/lessons_provider.dart';
+import '../logic/plan_selector.dart';
+import '../repositories/booking_data_source.dart';
+import '../repositories/supabase_booking_data_source.dart';
+
+final bookingDataSourceProvider = Provider<BookingDataSource>((ref) {
+  return SupabaseBookingDataSource(ref.watch(supabaseClientProvider));
+});
 
 // Set di lesson_id prenotati dall'utente (confirmed) — solo lezioni future/oggi
-final userBookingsProvider = FutureProvider<Set<String>>((ref) async {
+final userBookingsProvider = FutureProvider.autoDispose<Set<String>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return {};
 
@@ -25,7 +32,7 @@ final userBookingsProvider = FutureProvider<Set<String>>((ref) async {
 });
 
 // Set di lesson_id in lista d'attesa — solo lezioni future/oggi
-final userWaitlistProvider = FutureProvider<Set<String>>((ref) async {
+final userWaitlistProvider = FutureProvider.autoDispose<Set<String>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return {};
 
@@ -46,7 +53,7 @@ final userWaitlistProvider = FutureProvider<Set<String>>((ref) async {
 });
 
 // Set di lesson_id con prova in attesa — solo lezioni future/oggi
-final userPendingTrialLessonsProvider = FutureProvider<Set<String>>((ref) async {
+final userPendingTrialLessonsProvider = FutureProvider.autoDispose<Set<String>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return {};
 
@@ -69,7 +76,7 @@ final userPendingTrialLessonsProvider = FutureProvider<Set<String>>((ref) async 
 });
 
 /// True se l'utente ha almeno un piano attivo con crediti/unlimited valido.
-final hasActivePlanProvider = FutureProvider<bool>((ref) async {
+final hasActivePlanProvider = FutureProvider.autoDispose<bool>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return false;
 
@@ -92,7 +99,7 @@ final hasActivePlanProvider = FutureProvider<bool>((ref) async {
 
 // Set di course_id per cui l'utente ha almeno una prenotazione confirmed/attended
 // → determina se l'utente è "iscritto" a quel corso
-final userEnrolledCourseIdsProvider = FutureProvider<Set<String>>((ref) async {
+final userEnrolledCourseIdsProvider = FutureProvider.autoDispose<Set<String>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return {};
 
@@ -117,46 +124,18 @@ class BookingNotifier extends AsyncNotifier<void> {
     final user = ref.read(currentUserProvider);
     if (user == null) throw Exception('Utente non autenticato');
 
-    final client = ref.read(supabaseClientProvider);
-
-    final lessonRow = await client
-        .from('lessons')
-        .select('course_id')
-        .eq('id', lessonId)
-        .single();
+    final ds = ref.read(bookingDataSourceProvider);
+    final lessonRow = await ds.getLesson(lessonId);
     final courseId = lessonRow['course_id'] as String;
 
-    // Verifica piano valido (Open o specifico per questo corso)
-    final now = DateTime.now().toUtc().toIso8601String();
-    final plansData = await client
-        .from('user_plans')
-        .select('credits_remaining, course_id, plans!inner(type)')
-        .eq('user_id', user.id)
-        .or('expires_at.is.null,expires_at.gte.$now');
-
-    final plans = (plansData as List).cast<Map<String, dynamic>>();
-    final hasValidPlan = plans.any((p) {
-      final planCourseId = p['course_id'] as String?;
-      if (planCourseId != null && planCourseId != courseId) return false;
-      final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
-      if (type == 'unlimited') return true;
-      final credits = p['credits_remaining'] as int?;
-      return credits != null && credits > 0;
-    });
-
-    if (!hasValidPlan) {
+    final plans = await ds.getActivePlans(user.id);
+    if (!hasValidPlanForCourse(plans, courseId)) {
       throw Exception(
           'Nessun piano valido — usa "Prova" per richiedere una lezione di prova');
     }
 
-    await client.from('bookings').upsert(
-      {
-        'lesson_id': lessonId,
-        'user_id': user.id,
-        'status': 'confirmed',
-      },
-      onConflict: 'user_id,lesson_id',
-    );
+    await ds.upsertBooking(
+        userId: user.id, lessonId: lessonId, status: 'confirmed');
 
     ref.invalidate(userBookingsProvider);
     ref.invalidate(lessonsForDayProvider);
@@ -169,16 +148,9 @@ class BookingNotifier extends AsyncNotifier<void> {
     final user = ref.read(currentUserProvider);
     if (user == null) throw Exception('Utente non autenticato');
 
-    final client = ref.read(supabaseClientProvider);
-    await client.from('bookings').upsert(
-      {
-        'lesson_id': lessonId,
-        'user_id': user.id,
-        'status': 'pending',
-        'is_trial': true,
-      },
-      onConflict: 'user_id,lesson_id',
-    );
+    final ds = ref.read(bookingDataSourceProvider);
+    await ds.upsertBooking(
+        userId: user.id, lessonId: lessonId, status: 'pending', isTrial: true);
 
     ref.invalidate(userPendingTrialLessonsProvider);
   }
@@ -187,12 +159,9 @@ class BookingNotifier extends AsyncNotifier<void> {
     final user = ref.read(currentUserProvider);
     if (user == null) throw Exception('Utente non autenticato');
 
-    final client = ref.read(supabaseClientProvider);
-    await client
-        .from('bookings')
-        .update({'status': 'cancelled'})
-        .eq('lesson_id', lessonId)
-        .eq('user_id', user.id);
+    final ds = ref.read(bookingDataSourceProvider);
+    await ds.updateBookingStatus(
+        userId: user.id, lessonId: lessonId, status: 'cancelled');
 
     ref.invalidate(userBookingsProvider);
     ref.invalidate(userPendingTrialLessonsProvider);
@@ -231,60 +200,19 @@ class BookingNotifier extends AsyncNotifier<void> {
     final user = ref.read(currentUserProvider);
     if (user == null) throw Exception('Utente non autenticato');
 
-    final client = ref.read(supabaseClientProvider);
-
-    // 1. Recupera il course_id della lezione
-    final lessonRow = await client
-        .from('lessons')
-        .select('course_id')
-        .eq('id', lessonId)
-        .single();
+    final ds = ref.read(bookingDataSourceProvider);
+    final lessonRow = await ds.getLesson(lessonId);
     final courseId = lessonRow['course_id'] as String;
 
-    // 2. Trova il piano crediti migliore (Open prima, poi specifico per corso)
-    final now = DateTime.now().toUtc().toIso8601String();
-    final plansData = await client
-        .from('user_plans')
-        .select('id, credits_remaining, course_id, plans!inner(type)')
-        .eq('user_id', user.id)
-        .or('expires_at.is.null,expires_at.gte.$now');
+    final plans = await ds.getActivePlans(user.id);
+    final bestPlan = selectBestCreditPlan(plans, courseId);
 
-    final plans = (plansData as List).cast<Map<String, dynamic>>();
+    await ds.updateBookingStatus(
+        userId: user.id, lessonId: lessonId, status: 'cancelled');
 
-    Map<String, dynamic>? bestPlan;
-    // Open credits plan first
-    for (final p in plans) {
-      final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
-      if (type != 'credits') continue;
-      if (p['course_id'] != null) continue; // skip course-specific
-      final credits = p['credits_remaining'] as int?;
-      if (credits != null && credits > 0) { bestPlan = p; break; }
-    }
-    // Fall back to course-specific
-    if (bestPlan == null) {
-      for (final p in plans) {
-        final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
-        if (type != 'credits') continue;
-        if (p['course_id'] != courseId) continue;
-        final credits = p['credits_remaining'] as int?;
-        if (credits != null && credits > 0) { bestPlan = p; break; }
-      }
-    }
-
-    // 3. Segna la prenotazione come cancellata
-    await client
-        .from('bookings')
-        .update({'status': 'cancelled'})
-        .eq('lesson_id', lessonId)
-        .eq('user_id', user.id);
-
-    // 4. Scala un credito
     if (bestPlan != null) {
-      final credits = bestPlan['credits_remaining'] as int;
-      await client
-          .from('user_plans')
-          .update({'credits_remaining': credits - 1})
-          .eq('id', bestPlan['id'] as String);
+      await ds.deductCredit(
+          bestPlan['id'] as String, bestPlan['credits_remaining'] as int);
     }
 
     ref.invalidate(userBookingsProvider);
