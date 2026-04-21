@@ -11,7 +11,7 @@ final studioPricingProvider =
   return await client
       .from('studios')
       .select(
-          'group_surcharge_pct, shared_surcharge_pct, personal_surcharge_pct, open_surcharge_pct')
+          'group_surcharge_pct, shared_surcharge_pct, personal_surcharge_pct, second_course_discount_pct')
       .eq('id', studioId)
       .maybeSingle();
 });
@@ -31,15 +31,3 @@ double calcCourseRate(
   return base * (1 + pct / 100);
 }
 
-double? calcOpenRate(List<Map<String, dynamic>> courses, Map<String, dynamic> pricing) {
-  double maxRate = 0;
-  for (final c in courses) {
-    final base = (c['hourly_rate'] as num?)?.toDouble() ?? 0;
-    if (base == 0) continue;
-    final rate = calcCourseRate(c, pricing);
-    if (rate > maxRate) maxRate = rate;
-  }
-  if (maxRate == 0) return null;
-  final openPct = (pricing['open_surcharge_pct'] as num?)?.toDouble() ?? 15;
-  return maxRate * (1 + openPct / 100);
-}

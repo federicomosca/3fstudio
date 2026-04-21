@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/models/course_type.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
@@ -15,7 +14,7 @@ final coursesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
   final data = await client
       .from('courses')
-      .select('id, name, type, cancel_window_hours, description, users!class_owner_id(id, full_name)')
+      .select('id, name, type, cancel_window_hours, description, allows_group, allows_shared, allows_personal, users!class_owner_id(id, full_name)')
       .eq('studio_id', studioId)
       .order('name');
   return (data as List).cast<Map<String, dynamic>>();
@@ -73,32 +72,33 @@ class CoursesScreen extends ConsumerWidget {
                 itemCount: list.length,
                 separatorBuilder: (context, i) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
-                  final c    = list[i];
-                  final type = c['type'] as String? ?? 'group';
+                  final c     = list[i];
                   final owner = c['users'] as Map<String, dynamic>?;
+                  final ag    = c['allows_group']    as bool? ?? true;
+                  final as_   = c['allows_shared']   as bool? ?? false;
+                  final ap    = c['allows_personal'] as bool? ?? false;
+                  final modes = [
+                    if (ag)  'Gruppo',
+                    if (as_) 'Condiviso',
+                    if (ap)  'Personal',
+                  ].join(' · ');
+                  final subtitle = owner != null
+                      ? '${owner['full_name']}  ·  $modes'
+                      : modes;
                   return ListTile(
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                     tileColor: Theme.of(context).colorScheme.surface,
                     leading: CircleAvatar(
-                      backgroundColor: type == 'personal'
-                          ? const Color(0xFF9C27B0).withAlpha(30)
-                          : AppTheme.blue.withAlpha(30),
-                      child: Icon(
-                        courseTypeIcon(type),
-                        color: type == 'personal'
-                            ? const Color(0xFFCE93D8)
-                            : AppTheme.blue,
-                      ),
+                      backgroundColor: AppTheme.blue.withAlpha(30),
+                      child: Icon(Icons.fitness_center_outlined,
+                          color: AppTheme.blue),
                     ),
                     title: Text(c['name'] as String,
                         style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(owner != null
-                        ? 'Responsabile: ${owner['full_name']}'
-                        : courseTypeLabel(type)),
+                    subtitle: Text(subtitle),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () =>
-                        context.push('/owner/courses/${c['id']}'),
+                    onTap: () => context.push('/owner/courses/${c['id']}'),
                   );
                 },
               ),
@@ -179,7 +179,9 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
   final _hoursCtrl  = TextEditingController(text: '2');
   final _rateCtrl   = TextEditingController();
 
-  String  _type     = 'group';
+  bool    _allowsGroup    = true;
+  bool    _allowsShared   = false;
+  bool    _allowsPersonal = false;
   String? _ownerId;
   bool    _loading  = false;
   String? _error;
@@ -202,15 +204,24 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
       if (studioId == null) throw Exception('Studio non trovato');
       final client = ref.read(supabaseClientProvider);
 
+      final derivedType = _allowsPersonal && !_allowsGroup && !_allowsShared
+          ? 'personal'
+          : _allowsShared && !_allowsGroup && !_allowsPersonal
+              ? 'shared'
+              : 'group';
+
       await client.from('courses').insert({
         'name':                _nameCtrl.text.trim(),
-        'type':                _type,
+        'type':                derivedType,
         'studio_id':           studioId,
         'class_owner_id':      _ownerId,
         'cancel_window_hours': int.tryParse(_hoursCtrl.text.trim()) ?? 2,
         'description':
             _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
         'hourly_rate':         double.tryParse(_rateCtrl.text.trim()) ?? 0,
+        'allows_group':        _allowsGroup,
+        'allows_shared':       _allowsShared,
+        'allows_personal':     _allowsPersonal,
       });
 
       if (mounted) {
@@ -274,30 +285,29 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
               ),
               const SizedBox(height: 16),
 
-              // Tipo
-              Text('Tipo', style: theme.textTheme.labelMedium),
+              // Modalità di lezione
+              Text('Modalità di lezione abilitate', style: theme.textTheme.labelMedium),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 8,
                 children: [
-                  _TypeChip(
-                    label: 'Gruppo',
-                    icon: Icons.group_outlined,
-                    selected: _type == 'group',
-                    onTap: () => setState(() => _type = 'group'),
+                  FilterChip(
+                    label: const Text('Gruppo'),
+                    avatar: const Icon(Icons.group_outlined, size: 16),
+                    selected: _allowsGroup,
+                    onSelected: (v) => setState(() => _allowsGroup = v),
                   ),
-                  const SizedBox(width: 8),
-                  _TypeChip(
-                    label: 'Condiviso',
-                    icon: Icons.people_outline,
-                    selected: _type == 'shared',
-                    onTap: () => setState(() => _type = 'shared'),
+                  FilterChip(
+                    label: const Text('Condiviso'),
+                    avatar: const Icon(Icons.people_outline, size: 16),
+                    selected: _allowsShared,
+                    onSelected: (v) => setState(() => _allowsShared = v),
                   ),
-                  const SizedBox(width: 8),
-                  _TypeChip(
-                    label: 'Personal',
-                    icon: Icons.person_outline,
-                    selected: _type == 'personal',
-                    onTap: () => setState(() => _type = 'personal'),
+                  FilterChip(
+                    label: const Text('Personal'),
+                    avatar: const Icon(Icons.person_outline, size: 16),
+                    selected: _allowsPersonal,
+                    onSelected: (v) => setState(() => _allowsPersonal = v),
                   ),
                 ],
               ),
@@ -415,53 +425,6 @@ class _AddCourseSheetState extends ConsumerState<_AddCourseSheet> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TypeChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-  const _TypeChip(
-      {required this.label,
-      required this.icon,
-      required this.selected,
-      required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? cs.primary : cs.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? cs.primary : cs.outline,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                size: 18,
-                color: selected ? cs.onPrimary : cs.onSurface.withAlpha(180)),
-            const SizedBox(width: 6),
-            Text(label,
-                style: TextStyle(
-                  color:
-                      selected ? cs.onPrimary : cs.onSurface.withAlpha(180),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                )),
-          ],
         ),
       ),
     );

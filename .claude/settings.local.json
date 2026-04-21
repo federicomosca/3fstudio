@@ -32,7 +32,9 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Bash(gh pr create --title 'Pricing model: dynamic plan pricing linked to courses and formulas' --body ' *)"
+      "Bash(gh pr create --title 'Pricing model: dynamic plan pricing linked to courses and formulas' --body ' *)",
+      "Bash(grep -v \"Try \\\\`flutter\")",
+      "Bash(grep -v \"Try \\\\`\")"
     ]
   }
 }

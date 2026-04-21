@@ -7,16 +7,51 @@ import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../shared/widgets/coming_soon.dart';
 
-final _myCoursesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+class _CourseEntry {
+  final Map<String, dynamic> course;
+  final bool isOwner;
+  const _CourseEntry({required this.course, required this.isOwner});
+}
+
+final _myCoursesProvider = FutureProvider<List<_CourseEntry>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return [];
   final client = ref.watch(supabaseClientProvider);
-  final data = await client
+
+  // Corsi di cui sono responsabile (class_owner)
+  final ownerData = await client
       .from('courses')
       .select('id, name, type, cancel_window_hours')
       .eq('class_owner_id', user.id)
       .order('name');
-  return (data as List).cast<Map<String, dynamic>>();
+  final ownerCourses = (ownerData as List).cast<Map<String, dynamic>>();
+  final ownerIds = ownerCourses.map((c) => c['id'] as String).toSet();
+
+  // Course IDs assegnati via lezioni
+  final lessonData = await client
+      .from('lessons')
+      .select('course_id')
+      .eq('trainer_id', user.id);
+  final assignedIds = (lessonData as List)
+      .map((l) => l['course_id'] as String)
+      .toSet()
+      .difference(ownerIds);
+
+  List<Map<String, dynamic>> assignedCourses = [];
+  if (assignedIds.isNotEmpty) {
+    final extraData = await client
+        .from('courses')
+        .select('id, name, type, cancel_window_hours')
+        .inFilter('id', assignedIds.toList())
+        .order('name');
+    assignedCourses = (extraData as List).cast<Map<String, dynamic>>();
+  }
+
+  return [
+    ...ownerCourses.map((c) => _CourseEntry(course: c, isOwner: true)),
+    ...assignedCourses.map((c) => _CourseEntry(course: c, isOwner: false)),
+  ]..sort((a, b) =>
+      (a.course['name'] as String).compareTo(b.course['name'] as String));
 });
 
 class MyCoursesScreen extends ConsumerWidget {
@@ -29,12 +64,6 @@ class MyCoursesScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('I miei corsi'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.account_circle_outlined),
-            onPressed: () => context.push('/staff/profile'),
-          ),
-        ],
       ),
       body: courses.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -44,16 +73,17 @@ class MyCoursesScreen extends ConsumerWidget {
             ? const ComingSoon(
                 title: 'Nessun corso assegnato',
                 icon: Icons.fitness_center_outlined,
-                subtitle: 'Il gym owner ti assegnerà i corsi di cui sei responsabile.',
+                subtitle: 'Il gym owner ti assegnerà i corsi.',
               )
             : ListView.separated(
                 padding: const EdgeInsets.all(16),
                 itemCount: list.length,
                 separatorBuilder: (context, i) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
-                  final c       = list[i];
+                  final entry      = list[i];
+                  final c          = entry.course;
                   final courseType = c['type'] as String? ?? 'group';
-                  final window  = c['cancel_window_hours'] as int? ?? 24;
+                  final window     = c['cancel_window_hours'] as int? ?? 24;
 
                   return ListTile(
                     shape: RoundedRectangleBorder(
@@ -65,12 +95,16 @@ class MyCoursesScreen extends ConsumerWidget {
                           : AppTheme.blue.withAlpha(30),
                       child: Icon(
                         courseTypeIcon(courseType),
-                        color: courseType == 'personal' ? const Color(0xFFCE93D8) : AppTheme.blue,
+                        color: courseType == 'personal'
+                            ? const Color(0xFFCE93D8)
+                            : AppTheme.blue,
                       ),
                     ),
                     title: Text(c['name'] as String),
                     subtitle: Text(
-                        '${courseTypeLabel(courseType)} · cancella entro ${window}h'),
+                      '${courseTypeLabel(courseType)} · cancella entro ${window}h'
+                      '${entry.isOwner ? '' : ' · assegnato'}',
+                    ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push('/staff/courses/${c['id']}'),
                   );

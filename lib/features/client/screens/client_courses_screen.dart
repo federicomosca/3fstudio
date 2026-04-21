@@ -68,10 +68,6 @@ class ClientCoursesScreen extends ConsumerWidget {
         title: const Text('Corsi'),
         actions: [
           const CreditsChip(),
-          IconButton(
-            icon: const Icon(Icons.account_circle_outlined),
-            onPressed: () => context.push('/client/profile'),
-          ),
         ],
       ),
       body: coursesAsync.when(

@@ -110,10 +110,15 @@ class SedeSelectorBar extends ConsumerWidget {
   ) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => _SedePickerSheet(
+      builder: (ctx) => ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: MediaQuery.of(ctx).size.height * 0.45,
+        ),
+        child: _SedePickerSheet(
         sedi: sedi,
         current: current,
         canAddSede: canAddSede,
@@ -131,6 +136,7 @@ class SedeSelectorBar extends ConsumerWidget {
                 _showAddSedeDialog(context, ref);
               }
             : null,
+      ),
       ),
     );
   }

@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 
 import '../../../features/auth/providers/auth_provider.dart';
 import 'courses_screen.dart';
-import '../../../core/models/course_type.dart';
 import '../../../features/booking/providers/booking_provider.dart';
 import '../../../features/client/widgets/credits_chip.dart';
 import '../../../core/providers/studio_provider.dart';
@@ -18,7 +17,7 @@ final _courseDetailProvider =
   final client = ref.watch(supabaseClientProvider);
   final data   = await client
       .from('courses')
-      .select('id, name, type, cancel_window_hours, description, hourly_rate, users!class_owner_id(id, full_name)')
+      .select('id, name, type, cancel_window_hours, description, hourly_rate, allows_group, allows_shared, allows_personal, users!class_owner_id(id, full_name)')
       .eq('id', courseId)
       .maybeSingle();
   return data;
@@ -172,8 +171,10 @@ class _CourseBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lessonsAsync  = ref.watch(_courseLessonsProvider(courseId));
-    final courseType    = course['type'] as String? ?? 'group';
     final owner         = course['users'] as Map<String, dynamic>?;
+    final ag            = course['allows_group']    as bool? ?? true;
+    final as_           = course['allows_shared']   as bool? ?? false;
+    final ap            = course['allows_personal'] as bool? ?? false;
     final desc          = course['description'] as String?;
     final cancelHours   = course['cancel_window_hours'] as int?;
     final hourlyRate    = (course['hourly_rate'] as num?)?.toDouble();
@@ -263,10 +264,9 @@ class _CourseBody extends ConsumerWidget {
                     const SizedBox(height: 60),
                     CircleAvatar(
                       radius: 30,
-                      backgroundColor:
-                          courseType == 'personal' ? Colors.purple.shade400 : Colors.blue.shade400,
-                      child: Icon(
-                        courseTypeIcon(courseType),
+                      backgroundColor: AppTheme.blue.withAlpha(60),
+                      child: const Icon(
+                        Icons.fitness_center_outlined,
                         color: Colors.white,
                         size: 28,
                       ),
@@ -297,10 +297,9 @@ class _CourseBody extends ConsumerWidget {
                 Wrap(
                   spacing: 8, runSpacing: 8,
                   children: [
-                    _InfoChip(
-                      icon: courseTypeIcon(courseType),
-                      label: courseTypeLabel(courseType),
-                    ),
+                    if (ag) _InfoChip(icon: Icons.group_outlined,  label: 'Gruppo'),
+                    if (as_) _InfoChip(icon: Icons.people_outline, label: 'Condiviso'),
+                    if (ap) _InfoChip(icon: Icons.person_outline,  label: 'Personal'),
                     if (owner != null)
                       GestureDetector(
                         onTap: () => context.push('/u/${owner['id']}'),
@@ -421,7 +420,9 @@ class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
 
   late String? _ownerId =
       (widget.course['users'] as Map<String, dynamic>?)?['id'] as String?;
-  late String _type = widget.course['type'] as String? ?? 'group';
+  late bool _allowsGroup    = widget.course['allows_group']    as bool? ?? true;
+  late bool _allowsShared   = widget.course['allows_shared']   as bool? ?? false;
+  late bool _allowsPersonal = widget.course['allows_personal'] as bool? ?? false;
   bool    _loading = false;
   String? _error;
 
@@ -438,15 +439,24 @@ class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
     if (!_formKey.currentState!.validate()) return;
     setState(() { _loading = true; _error = null; });
     try {
+      final derivedType = _allowsPersonal && !_allowsGroup && !_allowsShared
+          ? 'personal'
+          : _allowsShared && !_allowsGroup && !_allowsPersonal
+              ? 'shared'
+              : 'group';
+
       final client = ref.read(supabaseClientProvider);
       await client.from('courses').update({
         'name':                _nameCtrl.text.trim(),
-        'type':                _type,
+        'type':                derivedType,
         'description':
             _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
         'cancel_window_hours': int.tryParse(_hoursCtrl.text.trim()) ?? 2,
         'class_owner_id':      _ownerId,
         'hourly_rate':         double.tryParse(_rateCtrl.text.trim()) ?? 0,
+        'allows_group':        _allowsGroup,
+        'allows_shared':       _allowsShared,
+        'allows_personal':     _allowsPersonal,
       }).eq('id', widget.courseId);
 
       ref.invalidate(coursesProvider);
@@ -510,27 +520,29 @@ class _EditCourseSheetState extends ConsumerState<_EditCourseSheet> {
               ),
               const SizedBox(height: 16),
 
-              // Tipo
-              Text('Tipo', style: theme.textTheme.labelMedium),
+              // Modalità di lezione
+              Text('Modalità di lezione abilitate', style: theme.textTheme.labelMedium),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 8,
                 children: [
-                  _TypeBtn(
-                    label: 'Gruppo', icon: Icons.group_outlined,
-                    selected: _type == 'group',
-                    onTap: () => setState(() => _type = 'group'),
+                  FilterChip(
+                    label: const Text('Gruppo'),
+                    avatar: const Icon(Icons.group_outlined, size: 16),
+                    selected: _allowsGroup,
+                    onSelected: (v) => setState(() => _allowsGroup = v),
                   ),
-                  const SizedBox(width: 8),
-                  _TypeBtn(
-                    label: 'Condiviso', icon: Icons.people_outline,
-                    selected: _type == 'shared',
-                    onTap: () => setState(() => _type = 'shared'),
+                  FilterChip(
+                    label: const Text('Condiviso'),
+                    avatar: const Icon(Icons.people_outline, size: 16),
+                    selected: _allowsShared,
+                    onSelected: (v) => setState(() => _allowsShared = v),
                   ),
-                  const SizedBox(width: 8),
-                  _TypeBtn(
-                    label: 'Personal', icon: Icons.person_outline,
-                    selected: _type == 'personal',
-                    onTap: () => setState(() => _type = 'personal'),
+                  FilterChip(
+                    label: const Text('Personal'),
+                    avatar: const Icon(Icons.person_outline, size: 16),
+                    selected: _allowsPersonal,
+                    onSelected: (v) => setState(() => _allowsPersonal = v),
                   ),
                 ],
               ),
@@ -951,45 +963,6 @@ class _SectionTitle extends StatelessWidget {
           color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
           letterSpacing: 0.5,
         ));
-  }
-}
-
-class _TypeBtn extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-  const _TypeBtn({required this.label, required this.icon, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? cs.primary : cs.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: selected ? cs.primary : cs.outline),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, size: 18,
-                  color: selected ? cs.onPrimary : cs.onSurface.withAlpha(180)),
-              const SizedBox(height: 4),
-              Text(label,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: selected ? cs.onPrimary : cs.onSurface.withAlpha(180),
-                    fontWeight: FontWeight.w600, fontSize: 11)),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 

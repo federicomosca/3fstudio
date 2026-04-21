@@ -20,7 +20,7 @@ class _PricingSettingsScreenState extends ConsumerState<PricingSettingsScreen> {
   final _groupCtrl    = TextEditingController();
   final _sharedCtrl   = TextEditingController();
   final _personalCtrl = TextEditingController();
-  final _openCtrl     = TextEditingController();
+  final _discountCtrl = TextEditingController();
 
   bool _initialized = false;
   bool _saving      = false;
@@ -31,16 +31,16 @@ class _PricingSettingsScreenState extends ConsumerState<PricingSettingsScreen> {
     _groupCtrl.dispose();
     _sharedCtrl.dispose();
     _personalCtrl.dispose();
-    _openCtrl.dispose();
+    _discountCtrl.dispose();
     super.dispose();
   }
 
   void _initControllers(Map<String, dynamic> pricing) {
     if (_initialized) return;
-    _groupCtrl.text    = (pricing['group_surcharge_pct']    as num).toStringAsFixed(0);
-    _sharedCtrl.text   = (pricing['shared_surcharge_pct']   as num).toStringAsFixed(0);
-    _personalCtrl.text = (pricing['personal_surcharge_pct'] as num).toStringAsFixed(0);
-    _openCtrl.text     = (pricing['open_surcharge_pct']     as num).toStringAsFixed(0);
+    _groupCtrl.text    = (pricing['group_surcharge_pct']           as num).toStringAsFixed(0);
+    _sharedCtrl.text   = (pricing['shared_surcharge_pct']          as num).toStringAsFixed(0);
+    _personalCtrl.text = (pricing['personal_surcharge_pct']        as num).toStringAsFixed(0);
+    _discountCtrl.text = (pricing['second_course_discount_pct']    as num).toStringAsFixed(0);
     _initialized = true;
   }
 
@@ -52,10 +52,10 @@ class _PricingSettingsScreenState extends ConsumerState<PricingSettingsScreen> {
     setState(() { _saving = true; _error = null; });
     try {
       await ref.read(supabaseClientProvider).from('studios').update({
-        'group_surcharge_pct':    double.parse(_groupCtrl.text.trim()),
-        'shared_surcharge_pct':   double.parse(_sharedCtrl.text.trim()),
-        'personal_surcharge_pct': double.parse(_personalCtrl.text.trim()),
-        'open_surcharge_pct':     double.parse(_openCtrl.text.trim()),
+        'group_surcharge_pct':         double.parse(_groupCtrl.text.trim()),
+        'shared_surcharge_pct':        double.parse(_sharedCtrl.text.trim()),
+        'personal_surcharge_pct':      double.parse(_personalCtrl.text.trim()),
+        'second_course_discount_pct':  double.parse(_discountCtrl.text.trim()),
       }).eq('id', studioId);
 
       ref.invalidate(studioPricingProvider);
@@ -140,12 +140,13 @@ class _PricingSettingsScreenState extends ConsumerState<PricingSettingsScreen> {
           ),
           const SizedBox(height: 16),
           _SurchargeField(
-            controller: _openCtrl,
-            label: 'Rincaro Open',
-            icon: Icons.all_inclusive,
-            description: 'Applicato ai piani Open, calcolato sulla tariffa '
-                'del corso più costoso',
-            accentColor: AppTheme.blue,
+            controller: _discountCtrl,
+            label: 'Sconto 2° corso',
+            icon: Icons.discount_outlined,
+            description: 'Sconto applicato automaticamente quando il cliente '
+                'si iscrive a un secondo corso. Impostare 0 per disabilitarlo.',
+            accentColor: AppTheme.cyan,
+            isSurcharge: false,
           ),
 
           if (_error != null) ...[
@@ -199,12 +200,14 @@ class _SurchargeField extends StatelessWidget {
   final IconData icon;
   final String description;
   final Color? accentColor;
+  final bool isSurcharge;
   const _SurchargeField({
     required this.controller,
     required this.label,
     required this.icon,
     required this.description,
     this.accentColor,
+    this.isSurcharge = true,
   });
 
   @override
@@ -229,7 +232,7 @@ class _SurchargeField extends StatelessWidget {
           controller: controller,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: InputDecoration(
-            suffixText: '%',
+            suffixText: isSurcharge ? '+%' : '-%',
             isDense: true,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
@@ -277,8 +280,8 @@ class _ExampleCard extends StatelessWidget {
             '  · Gruppo (+20%): €12/lezione\n'
             '  · Condiviso (+50%): €15/lezione\n'
             '  · Personal (+100%): €20/lezione\n\n'
-            'Piano Open (tariffa max = €20, rincaro +15%):\n'
-            '  · €23/lezione',
+            'Sconto 2° corso (-15%): applicato automaticamente\n'
+            '  es. piano crediti da €120 → €102',
             style: TextStyle(
                 fontSize: 13,
                 color: cs.onSurface.withAlpha(180),

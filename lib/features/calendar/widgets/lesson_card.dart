@@ -156,6 +156,24 @@ class LessonCard extends StatelessWidget {
   }
 
   Widget _buildButton(BuildContext context, bool isFull) {
+    final isPast = lesson.startTime.isBefore(DateTime.now());
+
+    // Lezione passata e non prenotata → nessuna azione disponibile
+    if (isPast && !isBooked) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey.withAlpha(20),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.withAlpha(60)),
+        ),
+        child: Text(
+          'Conclusa',
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+        ),
+      );
+    }
+
     // Prenotazione confermata → mostra annulla
     if (isBooked) {
       return OutlinedButton(

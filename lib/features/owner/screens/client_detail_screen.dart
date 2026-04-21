@@ -30,7 +30,7 @@ final _studioCoursesProvider =
   final client = ref.watch(supabaseClientProvider);
   final data = await client
       .from('courses')
-      .select('id, name, type, hourly_rate')
+      .select('id, name, type, hourly_rate, allows_group, allows_shared, allows_personal')
       .eq('studio_id', studioId)
       .order('name');
   return (data as List).cast<Map<String, dynamic>>();
@@ -632,53 +632,97 @@ class _AssignPlanSheet extends ConsumerStatefulWidget {
 
 class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
   String? _selectedPlanId;
-  bool    _isOpen            = true;
   String? _courseId;
-  String  _formula           = 'group';
-  bool    _saving            = false;
-  bool    _infiniteSessions  = false;
-  final   _sessionsCtrl      = TextEditingController(text: '3');
+  String  _formula              = 'group';
+  bool    _saving               = false;
+  bool    _infiniteSessions     = false;
+  final   _sessionsCtrl         = TextEditingController(text: '3');
+  final   _discountCtrl         = TextEditingController(text: '0');
 
   @override
   void dispose() {
     _sessionsCtrl.dispose();
+    _discountCtrl.dispose();
     super.dispose();
   }
 
   int get _effectiveSessions =>
       _infiniteSessions ? 6 : (int.tryParse(_sessionsCtrl.text) ?? 3).clamp(1, 99);
 
+  void _onCourseChanged(
+    String? v,
+    List<Map<String, dynamic>> courses,
+    List<Map<String, dynamic>> activePlans,
+    Map<String, dynamic>? pricing,
+  ) {
+    final course = v != null
+        ? courses.where((c) => c['id'] == v).firstOrNull
+        : null;
+
+    // Reset formula to first allowed by new course
+    String newFormula = _formula;
+    if (course != null) {
+      final ag = course['allows_group']    as bool? ?? true;
+      final as_ = course['allows_shared']  as bool? ?? false;
+      final ap = course['allows_personal'] as bool? ?? false;
+      final currentOk = (_formula == 'group' && ag) ||
+          (_formula == 'shared' && as_) ||
+          (_formula == 'personal' && ap);
+      if (!currentOk) {
+        newFormula = ag ? 'group' : (as_ ? 'shared' : 'personal');
+      }
+    }
+
+    // Auto-fill discount on each course change
+    final hasOther = activePlans.any((p) =>
+        p['course_id'] != null && p['course_id'] != v);
+    final studioDiscount = pricing != null
+        ? (pricing['second_course_discount_pct'] as num?)?.toDouble() ?? 0.0
+        : 0.0;
+
+    setState(() {
+      _courseId          = v;
+      _formula           = newFormula;
+      _discountCtrl.text =
+          (hasOther ? studioDiscount : 0.0).toStringAsFixed(0);
+    });
+  }
+
   Future<void> _save(
     List<Map<String, dynamic>> plans,
     List<Map<String, dynamic>> courses,
     Map<String, dynamic>? pricing,
   ) async {
-    if (_selectedPlanId == null) return;
-    if (!_isOpen && _courseId == null) return;
+    if (_selectedPlanId == null || _courseId == null) return;
 
     final plan = plans.firstWhere((p) => p['id'] == _selectedPlanId,
         orElse: () => {});
     if (plan.isEmpty) return;
 
-    final selectedCourse = _courseId != null
-        ? courses.where((c) => c['id'] == _courseId).firstOrNull
+    final selectedCourse =
+        courses.where((c) => c['id'] == _courseId).firstOrNull;
+    if (selectedCourse == null) return;
+
+    final rate = pricing != null
+        ? calcCourseRate(selectedCourse, pricing, formulaOverride: _formula)
         : null;
 
-    final rate = _isOpen
-        ? calcOpenRate(courses, pricing ?? {})
-        : (selectedCourse != null && pricing != null
-            ? calcCourseRate(selectedCourse, pricing, formulaOverride: _formula)
-            : null);
+    final discountPct  = double.tryParse(_discountCtrl.text.trim()) ?? 0.0;
+    final discountMult = 1 - discountPct / 100;
 
     final planType = plan['type'] as String? ?? 'credits';
     final credits  = plan['credits'] as int?;
     final duration = plan['duration_days'] as int?;
-    final pricePaid = rate == null
-        ? null
-        : planType == 'unlimited' && duration != null
-            ? rate * _effectiveSessions * (duration / 7)
-            : (credits != null ? rate * credits : null);
-    final formula = _isOpen ? 'open' : _formula;
+
+    double? basePrice;
+    if (rate != null) {
+      if (planType == 'unlimited' && duration != null) {
+        basePrice = rate * _effectiveSessions * (duration / 7);
+      } else if (credits != null) {
+        basePrice = rate * credits;
+      }
+    }
+    final pricePaid = basePrice != null ? basePrice * discountMult : null;
 
     setState(() => _saving = true);
     try {
@@ -688,12 +732,12 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
       await db.from('user_plans').insert({
         'user_id':           widget.userId,
         'plan_id':           _selectedPlanId,
-        'course_id':         _isOpen ? null : _courseId,
+        'course_id':         _courseId,
         'credits_remaining': planType == 'credits' ? credits : null,
         'expires_at':        duration != null
             ? now.add(Duration(days: duration)).toIso8601String()
             : null,
-        'formula':           formula,
+        'formula':           _formula,
         'rate_snapshot':     rate,
         'price_paid':        pricePaid,
       });
@@ -716,6 +760,14 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
     final plansAsync   = ref.watch(_studioPlansProvider);
     final coursesAsync = ref.watch(_studioCoursesProvider);
     final pricingAsync = ref.watch(studioPricingProvider);
+    final clientAsync  = ref.watch(_clientDetailProvider(widget.userId));
+
+    final pricing = pricingAsync.whenOrNull(data: (p) => p);
+    final activePlans = clientAsync.whenOrNull(data: (d) =>
+        (d?['user_plans'] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .where((p) => p['status'] != 'cancelled')
+        .toList()) ?? [];
 
     return Padding(
       padding: EdgeInsets.only(
@@ -745,76 +797,52 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Text('Errore: $e', style: TextStyle(color: cs.error)),
               data: (courses) {
-                final pricing = pricingAsync.whenOrNull(data: (p) => p);
-
                 final selectedCourse = _courseId != null
                     ? courses.where((c) => c['id'] == _courseId).firstOrNull
                     : null;
 
-                final rate = _isOpen
-                    ? (pricing != null ? calcOpenRate(courses, pricing) : null)
-                    : (selectedCourse != null && pricing != null
-                        ? calcCourseRate(selectedCourse, pricing,
-                            formulaOverride: _formula)
-                        : null);
+                final rate = selectedCourse != null && pricing != null
+                    ? calcCourseRate(selectedCourse, pricing,
+                        formulaOverride: _formula)
+                    : null;
 
                 final selectedPlan = _selectedPlanId != null
                     ? plans.where((p) => p['id'] == _selectedPlanId).firstOrNull
                     : null;
-                final credits = selectedPlan?['credits'] as int?;
+                final credits  = selectedPlan?['credits'] as int?;
                 final planType = selectedPlan?['type'] as String? ?? '';
 
-                final canSave = _selectedPlanId != null &&
-                    (_isOpen || _courseId != null) &&
-                    !_saving;
+                final ag  = selectedCourse?['allows_group']    as bool? ?? true;
+                final as_ = selectedCourse?['allows_shared']   as bool? ?? false;
+                final ap  = selectedCourse?['allows_personal'] as bool? ?? false;
+
+                final hasHourlyRate = selectedCourse != null &&
+                    ((selectedCourse['hourly_rate'] as num?)?.toDouble() ?? 0) > 0;
+
+                final discountPct =
+                    double.tryParse(_discountCtrl.text.trim()) ?? 0.0;
+
+                final canSave =
+                    _selectedPlanId != null && _courseId != null && !_saving;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // ── Scope toggle ──────────────────────────────────
-                    Text('Tipologia',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: cs.onSurface.withAlpha(150))),
-                    const SizedBox(height: 8),
-                    Row(children: [
-                      _ScopeToggle(
-                        label: 'Open',
-                        icon: Icons.all_inclusive,
-                        selected: _isOpen,
-                        color: AppTheme.blue,
-                        onTap: () => setState(() {
-                          _isOpen   = true;
-                          _courseId = null;
-                          _formula  = 'group';
-                        }),
-                      ),
-                      const SizedBox(width: 10),
-                      _ScopeToggle(
-                        label: 'Corso',
-                        icon: Icons.lock_outline,
-                        selected: !_isOpen,
-                        color: AppTheme.cyan,
-                        onTap: () => setState(() => _isOpen = false),
-                      ),
-                    ]),
-
                     // ── Course picker ─────────────────────────────────
-                    if (!_isOpen) ...[
-                      const SizedBox(height: 14),
-                      DropdownButtonFormField<String>(
-                        initialValue: _courseId,
-                        decoration: const InputDecoration(labelText: 'Corso'),
-                        items: courses.map((c) {
-                          return DropdownMenuItem(
-                            value: c['id'] as String,
-                            child: Text(c['name'] as String),
-                          );
-                        }).toList(),
-                        onChanged: (v) => setState(() => _courseId = v),
-                      ),
+                    DropdownButtonFormField<String>(
+                      initialValue: _courseId,
+                      decoration: const InputDecoration(labelText: 'Corso'),
+                      items: courses.map((c) => DropdownMenuItem(
+                        value: c['id'] as String,
+                        child: Text(c['name'] as String),
+                      )).toList(),
+                      onChanged: (v) =>
+                          _onCourseChanged(v, courses, activePlans, pricing),
+                    ),
+
+                    // ── Formula ───────────────────────────────────────
+                    if (selectedCourse != null) ...[
                       const SizedBox(height: 14),
                       Text('Modalità',
                           style: TextStyle(
@@ -823,29 +851,35 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                               color: cs.onSurface.withAlpha(150))),
                       const SizedBox(height: 8),
                       Row(children: [
-                        _ScopeToggle(
-                          label: 'Group',
-                          icon: Icons.group_outlined,
-                          selected: _formula == 'group',
-                          color: AppTheme.blue,
-                          onTap: () => setState(() => _formula = 'group'),
-                        ),
-                        const SizedBox(width: 8),
-                        _ScopeToggle(
-                          label: 'Shared',
-                          icon: Icons.people_outline,
-                          selected: _formula == 'shared',
-                          color: AppTheme.cyan,
-                          onTap: () => setState(() => _formula = 'shared'),
-                        ),
-                        const SizedBox(width: 8),
-                        _ScopeToggle(
-                          label: 'Personal',
-                          icon: Icons.person_outline,
-                          selected: _formula == 'personal',
-                          color: Colors.deepPurple.shade300,
-                          onTap: () => setState(() => _formula = 'personal'),
-                        ),
+                        if (ag) ...[
+                          _ScopeToggle(
+                            label: 'Group',
+                            icon: Icons.group_outlined,
+                            selected: _formula == 'group',
+                            color: AppTheme.blue,
+                            onTap: () => setState(() => _formula = 'group'),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        if (as_) ...[
+                          _ScopeToggle(
+                            label: 'Shared',
+                            icon: Icons.people_outline,
+                            selected: _formula == 'shared',
+                            color: AppTheme.cyan,
+                            onTap: () => setState(() => _formula = 'shared'),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        if (ap)
+                          _ScopeToggle(
+                            label: 'Personal',
+                            icon: Icons.person_outline,
+                            selected: _formula == 'personal',
+                            color: Colors.deepPurple.shade300,
+                            onTap: () =>
+                                setState(() => _formula = 'personal'),
+                          ),
                       ]),
                     ],
 
@@ -856,9 +890,9 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                       initialValue: _selectedPlanId,
                       decoration: const InputDecoration(labelText: 'Piano'),
                       items: plans.map((p) {
-                        final type    = p['type'] as String? ?? '';
-                        final creds   = p['credits'] as int?;
-                        final days    = p['duration_days'] as int?;
+                        final type  = p['type'] as String? ?? '';
+                        final creds = p['credits'] as int?;
+                        final days  = p['duration_days'] as int?;
                         final typeLabel = switch (type) {
                           'unlimited' => 'Illimitato',
                           'trial'     => 'Prova',
@@ -870,11 +904,13 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                           child: Text('${p['name']}  ·  $typeLabel$daysLabel'),
                         );
                       }).toList(),
-                      onChanged: (v) => setState(() => _selectedPlanId = v),
+                      onChanged: (v) =>
+                          setState(() => _selectedPlanId = v),
                     ),
 
-                    // ── Frequency picker (open unlimited only) ────────
-                    if (_isOpen && planType == 'unlimited' && selectedPlan != null) ...[
+                    // ── Frequency (unlimited with duration) ───────────
+                    if (planType == 'unlimited' && selectedPlan != null &&
+                        (selectedPlan['duration_days'] as int?) != null) ...[
                       const SizedBox(height: 14),
                       Text('Frequenza stimata',
                           style: TextStyle(
@@ -882,61 +918,75 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                               fontWeight: FontWeight.w700,
                               color: cs.onSurface.withAlpha(150))),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          SizedBox(
-                            width: 80,
-                            child: TextField(
-                              controller: _sessionsCtrl,
-                              enabled: !_infiniteSessions,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: '×/sett.',
-                                border: OutlineInputBorder(),
-                                contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 10),
-                              ),
-                              onChanged: (_) => setState(() {}),
+                      Row(children: [
+                        SizedBox(
+                          width: 80,
+                          child: TextField(
+                            controller: _sessionsCtrl,
+                            enabled: !_infiniteSessions,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: '×/sett.',
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 10),
                             ),
+                            onChanged: (_) => setState(() {}),
                           ),
-                          const SizedBox(width: 12),
-                          GestureDetector(
-                            onTap: () => setState(
-                                () => _infiniteSessions = !_infiniteSessions),
-                            child: Row(
-                              children: [
-                                Checkbox(
-                                  value: _infiniteSessions,
-                                  onChanged: (v) => setState(
-                                      () => _infiniteSessions = v ?? false),
-                                ),
-                                const Text('∞  (6×/sett.)'),
-                              ],
+                        ),
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: () => setState(
+                              () => _infiniteSessions = !_infiniteSessions),
+                          child: Row(children: [
+                            Checkbox(
+                              value: _infiniteSessions,
+                              onChanged: (v) => setState(
+                                  () => _infiniteSessions = v ?? false),
                             ),
-                          ),
-                        ],
-                      ),
+                            const Text('∞  (6×/sett.)'),
+                          ]),
+                        ),
+                      ]),
                     ],
 
+                    // ── Discount ──────────────────────────────────────
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _discountCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      decoration: InputDecoration(
+                        labelText: 'Sconto applicato (%)',
+                        prefixIcon: const Icon(Icons.discount_outlined),
+                        suffixText: '-%',
+                        helperText: activePlans.any((p) =>
+                                p['course_id'] != null &&
+                                p['course_id'] != _courseId) &&
+                            pricing != null
+                            ? 'Sconto studio 2° corso: '
+                              '${(pricing['second_course_discount_pct'] as num?)?.toStringAsFixed(0) ?? '0'}%'
+                            : null,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+
                     // ── Price preview ─────────────────────────────────
-                    if (selectedPlan != null) ...[
+                    if (selectedPlan != null && _courseId != null) ...[
                       const SizedBox(height: 14),
                       _PricePreview(
                         rate: rate,
                         credits: planType == 'credits' ? credits : null,
-                        isOpen: _isOpen,
                         courseName: selectedCourse?['name'] as String?,
                         formula: _formula,
-                        hasHourlyRate: !_isOpen &&
-                            selectedCourse != null &&
-                            ((selectedCourse['hourly_rate'] as num?)?.toDouble() ?? 0) > 0,
-                        pricingLoaded: pricing != null,
-                        sessionsPerWeek: (_isOpen && planType == 'unlimited')
+                        hasHourlyRate: hasHourlyRate,
+                        sessionsPerWeek: planType == 'unlimited'
                             ? _effectiveSessions
                             : null,
-                        durationDays: (_isOpen && planType == 'unlimited')
+                        durationDays: planType == 'unlimited'
                             ? (selectedPlan['duration_days'] as int?)
                             : null,
+                        discountPct: discountPct,
                       ),
                     ],
 
@@ -971,32 +1021,29 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
 class _PricePreview extends StatelessWidget {
   final double? rate;
   final int? credits;
-  final bool isOpen;
   final String? courseName;
   final String formula;
   final bool hasHourlyRate;
-  final bool pricingLoaded;
   final int? sessionsPerWeek;
   final int? durationDays;
+  final double discountPct;
 
   const _PricePreview({
     this.rate,
     this.credits,
-    required this.isOpen,
     this.courseName,
     required this.formula,
     required this.hasHourlyRate,
-    required this.pricingLoaded,
     this.sessionsPerWeek,
     this.durationDays,
+    this.discountPct = 0,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    // Course selected but no hourly_rate configured
-    if (!isOpen && !hasHourlyRate) {
+    if (!hasHourlyRate) {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -1017,41 +1064,23 @@ class _PricePreview extends StatelessWidget {
       );
     }
 
-    // Open mode but no courses have hourly_rate
-    if (isOpen && rate == null && pricingLoaded) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.orange.withAlpha(30),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.orange.withAlpha(100)),
-        ),
-        child: Row(children: [
-          const Icon(Icons.info_outline, color: Color(0xFFFFB74D), size: 16),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Nessun corso ha una tariffa base configurata. Imposta la tariffa oraria sui corsi per il calcolo automatico.',
-              style: TextStyle(fontSize: 12, color: Color(0xFFFFB74D)),
-            ),
-          ),
-        ]),
-      );
-    }
-
     if (rate == null) return const SizedBox.shrink();
 
     final isUnlimited = sessionsPerWeek != null && durationDays != null;
-    final total = isUnlimited
+    final baseTotal = isUnlimited
         ? rate! * sessionsPerWeek! * (durationDays! / 7)
         : (credits != null ? rate! * credits! : null);
+
+    final hasDiscount = discountPct > 0 && baseTotal != null;
+    final finalTotal =
+        hasDiscount ? baseTotal * (1 - discountPct / 100) : baseTotal;
 
     final formulaLabel = switch (formula) {
       'personal' => 'Personal',
       'shared'   => 'Shared',
       _          => 'Group',
     };
-    final scope = isOpen ? 'Open' : '${courseName ?? 'Corso'} · $formulaLabel';
+    final scope = '${courseName ?? 'Corso'} · $formulaLabel';
 
     final detailLine = isUnlimited
         ? '€${rate!.toStringAsFixed(2)}/lezione  ×  '
@@ -1082,10 +1111,24 @@ class _PricePreview extends StatelessWidget {
           const SizedBox(height: 6),
           Text(detailLine,
               style: TextStyle(fontSize: 13, color: cs.onSurface.withAlpha(200))),
-          if (total != null) ...[
+          if (baseTotal != null) ...[
             const SizedBox(height: 2),
+            if (hasDiscount) ...[
+              Text(
+                'Subtotale: €${baseTotal.toStringAsFixed(2)}',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: cs.onSurface.withAlpha(150),
+                    decoration: TextDecoration.lineThrough),
+              ),
+              Text(
+                'Sconto ${discountPct.toStringAsFixed(0)}%: '
+                '−€${(baseTotal - finalTotal!).toStringAsFixed(2)}',
+                style: const TextStyle(fontSize: 13, color: AppTheme.cyan),
+              ),
+            ],
             Text(
-              'Totale: €${total.toStringAsFixed(2)}',
+              'Totale: €${(finalTotal ?? baseTotal).toStringAsFixed(2)}',
               style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,

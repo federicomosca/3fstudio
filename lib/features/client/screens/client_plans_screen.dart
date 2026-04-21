@@ -127,7 +127,8 @@ class ClientPlansScreen extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Richiedi piano'),
         content: Text(
-          'Stai richiedendo "${plan['name']}" (€${price.toStringAsFixed(0)}).\n\n'
+          'Stai richiedendo "${plan['name']}"'
+          '${price > 0 ? ' (€${price.toStringAsFixed(0)})' : ''}.\n\n'
           'Il piano sarà attivato dall\'istruttore dopo aver verificato il pagamento.',
         ),
         actions: [
@@ -408,7 +409,8 @@ class _PlanCard extends StatelessWidget {
                         spacing: 8,
                         children: [
                           _Chip(typeLabel, color),
-                          _Chip('€${price.toStringAsFixed(0)}', cs.primary),
+                          if (price > 0)
+                            _Chip('€${price.toStringAsFixed(0)}', cs.primary),
                           if (credits != null)
                             _Chip('$credits lezioni', cs.secondary),
                           if (duration != null)
