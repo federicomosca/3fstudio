@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/studio.dart';
 import '../../core/providers/selected_studio_provider.dart';
 import '../../core/providers/studio_provider.dart';
+import '../../core/providers/theme_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 
@@ -29,8 +30,12 @@ class SedeSelectorBar extends ConsumerWidget {
 
     final hasMultiple = sedi.length > 1;
 
+    final themeMode   = ref.watch(themeModeProvider);
+    final isDark      = themeMode == ThemeMode.dark;
+    final barColor    = theme.appBarTheme.backgroundColor ?? const Color(0xFF0A1726);
+
     return Material(
-      color: theme.colorScheme.primary,
+      color: barColor,
       child: SafeArea(
         bottom: false,
         child: InkWell(
@@ -85,6 +90,18 @@ class SedeSelectorBar extends ConsumerWidget {
                     color: Colors.white.withAlpha(hasMultiple ? 255 : 120),
                     size: 20,
                   ),
+                IconButton(
+                  onPressed: () => ref.read(themeModeProvider.notifier).set(
+                    isDark ? ThemeMode.light : ThemeMode.dark,
+                  ),
+                  icon: Icon(
+                    isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                  tooltip: isDark ? 'Modalità chiara' : 'Modalità scura',
+                  padding: EdgeInsets.zero,
+                ),
                 if (profileRoute != null)
                   IconButton(
                     onPressed: () => context.push(profileRoute!),

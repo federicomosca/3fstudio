@@ -9,7 +9,6 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/studio_provider.dart';
-import '../../../core/providers/theme_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../providers/profile_provider.dart';
@@ -297,10 +296,6 @@ class _ProfileView extends ConsumerWidget {
               if (profile.phone != null)
                 _InfoTile(icon: Icons.phone_outlined, label: 'Telefono', value: profile.phone!),
               const SizedBox(height: 24),
-
-              // Tema
-              _ThemeToggleTile(ref: ref),
-              const SizedBox(height: 16),
 
               // Impostazioni account
               const _AccountSettingsSection(),
@@ -687,8 +682,6 @@ class _ClientView extends ConsumerWidget {
         ),
         const SizedBox(height: 24),
 
-        _ThemeToggleTile(ref: ref),
-        const SizedBox(height: 16),
         const _AccountSettingsSection(),
 
         ListTile(
@@ -928,24 +921,6 @@ class _InfoTile extends StatelessWidget {
   }
 }
 
-class _ThemeToggleTile extends StatelessWidget {
-  final WidgetRef ref;
-  const _ThemeToggleTile({required this.ref});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
-    return SwitchListTile(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      tileColor: Theme.of(context).colorScheme.surface,
-      secondary: Icon(isDark ? Icons.dark_mode_outlined : Icons.light_mode_outlined),
-      title: Text(isDark ? 'Tema scuro' : 'Tema chiaro'),
-      value: isDark,
-      onChanged: (v) => ref.read(themeModeProvider.notifier).set(
-          v ? ThemeMode.dark : ThemeMode.light),
-    );
-  }
-}
 
 class _SectionTitle extends StatelessWidget {
   final String label;

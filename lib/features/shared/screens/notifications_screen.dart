@@ -251,12 +251,26 @@ class _SendNotifSheetState extends ConsumerState<_SendNotifSheet> {
 
 // ── Notification card ─────────────────────────────────────────────────────────
 
-class _NotifCard extends StatelessWidget {
+class _NotifCard extends ConsumerWidget {
   final Map<String, dynamic> notif;
   const _NotifCard({required this.notif});
 
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final id     = notif['id'] as String;
+    final client = ref.read(supabaseClientProvider);
+    try {
+      await client.from('notifications').delete().eq('id', id);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final title     = notif['title'] as String;
     final body      = notif['body'] as String?;
     final createdAt = notif['created_at'] as String?;
@@ -295,6 +309,16 @@ class _NotifCard extends StatelessWidget {
                     fontSize: 15,
                   ),
                 ),
+              ),
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                iconSize: 18,
+                icon: Icon(
+                  Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.onSurface.withAlpha(100),
+                ),
+                onPressed: () => _delete(context, ref),
               ),
             ],
           ),

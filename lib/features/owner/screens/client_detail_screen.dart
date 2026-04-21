@@ -17,9 +17,9 @@ final _studioPlansProvider =
   final client = ref.watch(supabaseClientProvider);
   final data = await client
       .from('plans')
-      .select('id, name, type, credits, duration_days, price')
+      .select('id, name, type, credits, duration_days')
       .eq('studio_id', studioId)
-      .order('price');
+      .order('name');
   return (data as List).cast<Map<String, dynamic>>();
 });
 

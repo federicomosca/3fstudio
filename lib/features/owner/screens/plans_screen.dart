@@ -20,7 +20,8 @@ final _pendingRequestsProvider =
       .select(
           'id, user_id, plan_id, created_at, '
           'users(full_name, email), '
-          'plans(name, type, credits, duration_days, price)')
+          'plans(name, type, credits, duration_days), '
+          'courses(name)')
       .eq('studio_id', studioId)
       .eq('status', 'pending')
       .order('created_at');
@@ -33,9 +34,9 @@ final _plansProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
   final data = await client
       .from('plans')
-      .select('id, name, type, credits, price, duration_days')
+      .select('id, name, type, credits, duration_days')
       .eq('studio_id', studioId)
-      .order('price');
+      .order('name');
   return (data as List).cast<Map<String, dynamic>>();
 });
 
@@ -344,13 +345,14 @@ class _RequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs       = Theme.of(context).colorScheme;
-    final plan     = request['plans'] as Map<String, dynamic>? ?? {};
-    final user     = request['users'] as Map<String, dynamic>? ?? {};
-    final planName = plan['name'] as String? ?? '—';
-    final userName = user['full_name'] as String? ?? '—';
-    final price    = (plan['price'] as num?)?.toDouble() ?? 0;
-    final createdAt = request['created_at'] as String?;
+    final cs         = Theme.of(context).colorScheme;
+    final plan       = request['plans']   as Map<String, dynamic>? ?? {};
+    final user       = request['users']   as Map<String, dynamic>? ?? {};
+    final course     = request['courses'] as Map<String, dynamic>?;
+    final planName   = plan['name']   as String? ?? '—';
+    final userName   = user['full_name'] as String? ?? '—';
+    final courseName = course?['name'] as String?;
+    final createdAt  = request['created_at'] as String?;
     DateTime? created;
     if (createdAt != null) created = DateTime.tryParse(createdAt)?.toLocal();
 
@@ -384,9 +386,24 @@ class _RequestCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '$planName — €${price.toStringAsFixed(0)}',
+            planName,
             style: TextStyle(fontSize: 13, color: cs.onSurface.withAlpha(180)),
           ),
+          if (courseName != null) ...[
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                Icon(Icons.fitness_center_outlined,
+                    size: 12, color: cs.onSurface.withAlpha(130)),
+                const SizedBox(width: 4),
+                Text(
+                  courseName,
+                  style: TextStyle(
+                      fontSize: 12, color: cs.onSurface.withAlpha(150)),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -427,8 +444,7 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs   = Theme.of(context).colorScheme;
-    final type = plan['type'] as String;
-    final price    = (plan['price'] as num?)?.toDouble() ?? 0;
+    final type     = plan['type'] as String;
     final credits  = plan['credits']      as int?;
     final duration = plan['duration_days'] as int?;
 
@@ -487,7 +503,6 @@ class _PlanCard extends StatelessWidget {
                     spacing: 8,
                     children: [
                       _Chip(typeLabel, color),
-                      _Chip('€${price.toStringAsFixed(0)}', cs.primary),
                       if (credits != null) _Chip('$credits lezioni', cs.secondary),
                       if (duration != null) _Chip('${duration}gg', cs.onSurface.withAlpha(120)),
                     ],
@@ -557,7 +572,6 @@ class _PlanSheet extends ConsumerStatefulWidget {
 class _PlanSheetState extends ConsumerState<_PlanSheet> {
   final _formKey  = GlobalKey<FormState>();
   final _nameCt   = TextEditingController();
-  final _priceCt  = TextEditingController();
   final _creditCt = TextEditingController();
   final _daysCt   = TextEditingController();
 
@@ -575,17 +589,16 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
     super.initState();
     final e = widget.existing;
     if (e != null) {
-      _nameCt.text  = e['name']          as String? ?? '';
-      _priceCt.text = (e['price'] as num?)?.toStringAsFixed(0) ?? '';
+      _nameCt.text   = e['name']          as String? ?? '';
       _creditCt.text = (e['credits'] as int?)?.toString() ?? '';
-      _daysCt.text  = (e['duration_days'] as int?)?.toString() ?? '';
-      _type         = e['type']           as String? ?? 'credits';
+      _daysCt.text   = (e['duration_days'] as int?)?.toString() ?? '';
+      _type          = e['type']           as String? ?? 'credits';
     }
   }
 
   @override
   void dispose() {
-    _nameCt.dispose(); _priceCt.dispose();
+    _nameCt.dispose();
     _creditCt.dispose(); _daysCt.dispose();
     super.dispose();
   }
@@ -599,7 +612,6 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
       final payload  = {
         'name':          _nameCt.text.trim(),
         'type':          _type,
-        'price':         double.tryParse(_priceCt.text) ?? 0,
         'credits':       _type == 'credits'
             ? int.tryParse(_creditCt.text)
             : null,
@@ -726,37 +738,14 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
             ),
             const SizedBox(height: 14),
 
-            // Prezzo + Crediti
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _priceCt,
-                    decoration: const InputDecoration(
-                      labelText: 'Prezzo (€)',
-                      prefixText: '€ ',
-                    ),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
-                    ],
-                    validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Obbligatorio' : null,
-                  ),
-                ),
-                if (_type == 'credits') ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _creditCt,
-                      decoration: const InputDecoration(labelText: 'N. lezioni'),
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    ),
-                  ),
-                ],
-              ],
-            ),
+            // N. lezioni (solo tipo crediti)
+            if (_type == 'credits')
+              TextFormField(
+                controller: _creditCt,
+                decoration: const InputDecoration(labelText: 'N. lezioni'),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
             const SizedBox(height: 14),
 
             // Durata giorni

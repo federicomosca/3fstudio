@@ -24,7 +24,7 @@ final notificationsProvider =
   final channel = client
       .channel('public:notifications:$studioId')
       .onPostgresChanges(
-        event: PostgresChangeEvent.insert,
+        event: PostgresChangeEvent.all,
         schema: 'public',
         table: 'notifications',
         filter: PostgresChangeFilter(
