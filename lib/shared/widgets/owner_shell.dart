@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/owner/providers/plan_requests_provider.dart';
 import '../../features/owner/providers/pending_lessons_count_provider.dart';
 import '../../features/shared/providers/notifications_provider.dart';
+import 'floating_nav_item.dart';
 import 'sede_selector_bar.dart';
 
 class OwnerShell extends ConsumerWidget {
@@ -14,6 +15,7 @@ class OwnerShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final loc = GoRouterState.of(context).matchedLocation;
+    final sel = _index(loc);
 
     return Scaffold(
       body: Column(
@@ -22,40 +24,55 @@ class OwnerShell extends ConsumerWidget {
           Expanded(child: child),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index(loc),
-        onDestinationSelected: (i) => _nav(context, i),
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        destinations: [
-          NavigationDestination(
-            icon: _CalendarioBadge(selected: false),
-            selectedIcon: _CalendarioBadge(selected: true),
+      bottomNavigationBar: FloatingNavBar(
+        items: [
+          FloatingNavItem(
+            icon: _CalendarioBadge(selected: sel == 0),
             label: 'Calendario',
+            selected: sel == 0,
+            onTap: () => context.go('/owner/calendar'),
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.fitness_center_outlined),
-            selectedIcon: Icon(Icons.fitness_center),
+          FloatingNavItem(
+            icon: Icon(
+              sel == 1 ? Icons.fitness_center : Icons.fitness_center_outlined,
+              color: sel == 1 ? Colors.white : Colors.white54,
+              size: 22,
+            ),
             label: 'Corsi',
+            selected: sel == 1,
+            onTap: () => context.go('/owner/courses'),
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
+          FloatingNavItem(
+            icon: Icon(
+              sel == 2 ? Icons.people : Icons.people_outline,
+              color: sel == 2 ? Colors.white : Colors.white54,
+              size: 22,
+            ),
             label: 'Clienti',
+            selected: sel == 2,
+            onTap: () => context.go('/owner/clients'),
           ),
-          NavigationDestination(
-            icon: _GestioneBadge(selected: false),
-            selectedIcon: _GestioneBadge(selected: true),
+          FloatingNavItem(
+            icon: _GestioneBadge(selected: sel == 3),
             label: 'Gestione',
+            selected: sel == 3,
+            onTap: () => context.go('/owner/manage'),
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
+          FloatingNavItem(
+            icon: Icon(
+              sel == 4 ? Icons.home : Icons.home_outlined,
+              color: sel == 4 ? Colors.white : Colors.white54,
+              size: 22,
+            ),
             label: 'Studio',
+            selected: sel == 4,
+            onTap: () => context.go('/owner/studio'),
           ),
-          NavigationDestination(
-            icon: _NotificationsBadge(selected: false),
-            selectedIcon: _NotificationsBadge(selected: true),
+          FloatingNavItem(
+            icon: _NotificationsBadge(selected: sel == 5),
             label: 'Notifiche',
+            selected: sel == 5,
+            onTap: () => context.go('/owner/notifications'),
           ),
         ],
       ),
@@ -68,50 +85,49 @@ class OwnerShell extends ConsumerWidget {
     if (loc.startsWith('/owner/clients'))                                        return 2;
     if (loc.startsWith('/owner/manage') || loc.startsWith('/owner/rooms') ||
         loc.startsWith('/owner/team')   || loc.startsWith('/owner/plans') ||
-        loc.startsWith('/owner/report') || loc.startsWith('/owner/pricing'))     { return 3; }
+        loc.startsWith('/owner/report') || loc.startsWith('/owner/pricing')) { return 3; }
     if (loc.startsWith('/owner/studio'))                                         return 4;
     if (loc.startsWith('/owner/notifications') || loc.startsWith('/owner/profile')) return 5;
     return 0;
   }
-
-  void _nav(BuildContext context, int i) {
-    switch (i) {
-      case 0: context.go('/owner/calendar');
-      case 1: context.go('/owner/courses');
-      case 2: context.go('/owner/clients');
-      case 3: context.go('/owner/manage');
-      case 4: context.go('/owner/studio');
-      case 5: context.go('/owner/notifications');
-    }
-  }
 }
 
-// Badge sulla voce "Calendario" che mostra il numero di richieste lezioni/prova in attesa.
 class _CalendarioBadge extends ConsumerWidget {
   final bool selected;
   const _CalendarioBadge({required this.selected});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final count = ref.watch(pendingLessonsCountProvider).whenOrNull(
-              data: (n) => n,
-            ) ??
-        0;
-
+    final count = ref.watch(pendingLessonsCountProvider).whenOrNull(data: (n) => n) ?? 0;
+    final color = selected ? Colors.white : Colors.white54;
     final icon = Icon(
       selected ? Icons.calendar_month : Icons.calendar_month_outlined,
+      color: color,
+      size: 22,
     );
-
     if (count == 0) return icon;
-
-    return Badge(
-      label: Text('$count'),
-      child: icon,
-    );
+    return Badge(label: Text('$count'), child: icon);
   }
 }
 
-// Badge sulla voce "Notifiche" che mostra il numero di notifiche non lette.
+class _GestioneBadge extends ConsumerWidget {
+  final bool selected;
+  const _GestioneBadge({required this.selected});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(pendingPlanRequestsCountProvider).whenOrNull(data: (n) => n) ?? 0;
+    final color = selected ? Colors.white : Colors.white54;
+    final icon = Icon(
+      selected ? Icons.tune : Icons.tune_outlined,
+      color: color,
+      size: 22,
+    );
+    if (count == 0) return icon;
+    return Badge(label: Text('$count'), child: icon);
+  }
+}
+
 class _NotificationsBadge extends ConsumerWidget {
   final bool selected;
   const _NotificationsBadge({required this.selected});
@@ -119,41 +135,13 @@ class _NotificationsBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final count = ref.watch(unreadNotificationsCountProvider);
-
+    final color = selected ? Colors.white : Colors.white54;
     final icon = Icon(
       selected ? Icons.notifications : Icons.notifications_outlined,
+      color: color,
+      size: 22,
     );
-
     if (count == 0) return icon;
-
-    return Badge(
-      label: Text('$count'),
-      child: icon,
-    );
-  }
-}
-
-// Badge sulla voce "Gestione" che mostra il numero di richieste piani in attesa.
-class _GestioneBadge extends ConsumerWidget {
-  final bool selected;
-  const _GestioneBadge({required this.selected});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final count = ref.watch(pendingPlanRequestsCountProvider).whenOrNull(
-              data: (n) => n,
-            ) ??
-        0;
-
-    final icon = Icon(
-      selected ? Icons.tune : Icons.tune_outlined,
-    );
-
-    if (count == 0) return icon;
-
-    return Badge(
-      label: Text('$count'),
-      child: icon,
-    );
+    return Badge(label: Text('$count'), child: icon);
   }
 }

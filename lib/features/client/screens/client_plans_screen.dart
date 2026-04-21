@@ -16,9 +16,9 @@ final _availablePlansProvider =
   final client = ref.watch(supabaseClientProvider);
   final data = await client
       .from('plans')
-      .select('id, name, type, credits, price, duration_days')
+      .select('id, name, type, credits, duration_days')
       .eq('studio_id', studioId)
-      .order('price');
+      .order('name');
   return (data as List).cast<Map<String, dynamic>>();
 });
 
@@ -31,7 +31,7 @@ final _myPendingRequestProvider =
   final client = ref.watch(supabaseClientProvider);
   final data = await client
       .from('plan_requests')
-      .select('id, status, created_at, plans(name, type, credits, price)')
+      .select('id, status, created_at, plans(name, type, credits)')
       .eq('user_id', user.id)
       .eq('studio_id', studioId)
       .eq('status', 'pending')
@@ -121,38 +121,35 @@ class ClientPlansScreen extends ConsumerWidget {
 
   Future<void> _requestPlan(BuildContext context, WidgetRef ref,
       Map<String, dynamic> plan) async {
-    final price = (plan['price'] as num?)?.toDouble() ?? 0;
-    final confirmed = await showDialog<bool>(
+    final studioId = ref.read(currentStudioIdProvider);
+    if (studioId == null) return;
+
+    final db = ref.read(supabaseClientProvider);
+    final coursesData = await db
+        .from('courses')
+        .select('id, name')
+        .eq('studio_id', studioId)
+        .order('name');
+    final courses =
+        (coursesData as List).cast<Map<String, dynamic>>();
+    if (!context.mounted) return;
+
+    final selectedCourseId = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Richiedi piano'),
-        content: Text(
-          'Stai richiedendo "${plan['name']}"'
-          '${price > 0 ? ' (€${price.toStringAsFixed(0)})' : ''}.\n\n'
-          'Il piano sarà attivato dall\'istruttore dopo aver verificato il pagamento.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annulla'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Invia richiesta'),
-          ),
-        ],
+      builder: (ctx) => _RequestPlanDialog(
+        planName: plan['name'] as String,
+        courses: courses,
       ),
     );
-    if (confirmed != true || !context.mounted) return;
+    if (selectedCourseId == null || !context.mounted) return;
 
     try {
-      final user     = ref.read(currentUserProvider);
-      final studioId = ref.read(currentStudioIdProvider);
-      final db       = ref.read(supabaseClientProvider);
+      final user = ref.read(currentUserProvider);
       await db.from('plan_requests').insert({
         'user_id':   user!.id,
         'plan_id':   plan['id'],
         'studio_id': studioId,
+        'course_id': selectedCourseId,
         'status':    'pending',
       });
       ref.invalidate(_myPendingRequestProvider);
@@ -347,7 +344,6 @@ class _PlanCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs       = Theme.of(context).colorScheme;
     final type     = plan['type'] as String;
-    final price    = (plan['price'] as num?)?.toDouble() ?? 0;
     final credits  = plan['credits'] as int?;
     final duration = plan['duration_days'] as int?;
 
@@ -409,8 +405,6 @@ class _PlanCard extends StatelessWidget {
                         spacing: 8,
                         children: [
                           _Chip(typeLabel, color),
-                          if (price > 0)
-                            _Chip('€${price.toStringAsFixed(0)}', cs.primary),
                           if (credits != null)
                             _Chip('$credits lezioni', cs.secondary),
                           if (duration != null)
@@ -437,6 +431,78 @@ class _PlanCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _RequestPlanDialog extends StatefulWidget {
+  final String planName;
+  final List<Map<String, dynamic>> courses;
+  const _RequestPlanDialog({
+    required this.planName,
+    required this.courses,
+  });
+
+  @override
+  State<_RequestPlanDialog> createState() => _RequestPlanDialogState();
+}
+
+class _RequestPlanDialogState extends State<_RequestPlanDialog> {
+  String? _selectedCourseId;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: const Text('Richiedi piano'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Stai richiedendo "${widget.planName}".\n\n'
+            'Il piano sarà attivato dall\'istruttore dopo aver verificato il pagamento.',
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            decoration: const InputDecoration(
+              labelText: 'Corso',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            initialValue: _selectedCourseId,
+            hint: const Text('Seleziona il corso'),
+            items: widget.courses
+                .map((c) => DropdownMenuItem<String>(
+                      value: c['id'] as String,
+                      child: Text(c['name'] as String),
+                    ))
+                .toList(),
+            onChanged: (v) => setState(() => _selectedCourseId = v),
+            validator: (v) => v == null ? 'Obbligatorio' : null,
+          ),
+          if (_selectedCourseId == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Seleziona il corso per continuare',
+                style: TextStyle(fontSize: 12, color: cs.error),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annulla'),
+        ),
+        ElevatedButton(
+          onPressed: _selectedCourseId == null
+              ? null
+              : () => Navigator.pop(context, _selectedCourseId),
+          child: const Text('Invia richiesta'),
+        ),
+      ],
     );
   }
 }

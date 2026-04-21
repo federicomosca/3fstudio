@@ -7,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
+import '../../../features/calendar/providers/lessons_provider.dart';
 import '../providers/pending_lessons_count_provider.dart';
 import '../../../shared/widgets/recurring_section.dart';
 
@@ -106,17 +107,25 @@ final _ownerTrainersProvider =
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-class OwnerCalendarScreen extends ConsumerWidget {
+class OwnerCalendarScreen extends ConsumerStatefulWidget {
   const OwnerCalendarScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final selectedDay = ref.watch(_ownerSelectedDayProvider);
-    final lessons = ref.watch(_ownerLessonsForDayProvider(selectedDay));
+  ConsumerState<OwnerCalendarScreen> createState() => _OwnerCalendarScreenState();
+}
+
+class _OwnerCalendarScreenState extends ConsumerState<OwnerCalendarScreen> {
+  DateTime _focusedMonth = DateTime.now();
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedDay  = ref.watch(_ownerSelectedDayProvider);
+    final lessons      = ref.watch(_ownerLessonsForDayProvider(selectedDay));
     final pendingCount = ref.watch(pendingLessonsCountProvider);
+    final lessonDays   = ref.watch(lessonDaysProvider(_focusedMonth));
     final timeFmt = DateFormat('HH:mm');
-    final dayFmt = DateFormat('EEEE d MMMM', 'it_IT');
-    final theme = Theme.of(context);
+    final dayFmt  = DateFormat('EEEE d MMMM', 'it_IT');
+    final theme   = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -198,9 +207,15 @@ class OwnerCalendarScreen extends ConsumerWidget {
               ),
               weekendTextStyle: TextStyle(color: Color(0xFFAAAAAA)),
             ),
+            eventLoader: (day) {
+              final days = lessonDays.whenOrNull(data: (d) => d) ?? {};
+              final normalized = DateTime(day.year, day.month, day.day);
+              return days.contains(normalized) ? [true] : [];
+            },
             onDaySelected: (selected, _) =>
                 ref.read(_ownerSelectedDayProvider.notifier).set(selected),
             onPageChanged: (focused) {
+              setState(() => _focusedMonth = focused);
               ref.read(_ownerSelectedDayProvider.notifier).set(focused);
             },
           ),

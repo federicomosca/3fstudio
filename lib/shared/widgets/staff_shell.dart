@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/shared/providers/notifications_provider.dart';
+import 'floating_nav_item.dart';
 import 'sede_selector_bar.dart';
 
 /// Shell per trainer (e course owner — determinato da class_owner_id sul corso).
@@ -13,6 +14,7 @@ class StaffShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final loc = GoRouterState.of(context).matchedLocation;
+    final sel = _index(loc);
 
     return Scaffold(
       body: Column(
@@ -21,29 +23,43 @@ class StaffShell extends ConsumerWidget {
           Expanded(child: child),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index(loc),
-        onDestinationSelected: (i) => _nav(context, i),
-        destinations: [
-          const NavigationDestination(
-            icon:         Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
-            label:        'Calendario',
+      bottomNavigationBar: FloatingNavBar(
+        items: [
+          FloatingNavItem(
+            icon: Icon(
+              sel == 0 ? Icons.calendar_month : Icons.calendar_month_outlined,
+              color: sel == 0 ? Colors.white : Colors.white54,
+              size: 22,
+            ),
+            label: 'Calendario',
+            selected: sel == 0,
+            onTap: () => context.go('/staff/calendar'),
           ),
-          const NavigationDestination(
-            icon:         Icon(Icons.fitness_center_outlined),
-            selectedIcon: Icon(Icons.fitness_center),
-            label:        'Corsi',
+          FloatingNavItem(
+            icon: Icon(
+              sel == 1 ? Icons.fitness_center : Icons.fitness_center_outlined,
+              color: sel == 1 ? Colors.white : Colors.white54,
+              size: 22,
+            ),
+            label: 'Corsi',
+            selected: sel == 1,
+            onTap: () => context.go('/staff/courses'),
           ),
-          const NavigationDestination(
-            icon:         Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label:        'Studio',
+          FloatingNavItem(
+            icon: Icon(
+              sel == 2 ? Icons.home : Icons.home_outlined,
+              color: sel == 2 ? Colors.white : Colors.white54,
+              size: 22,
+            ),
+            label: 'Studio',
+            selected: sel == 2,
+            onTap: () => context.go('/staff/studio'),
           ),
-          NavigationDestination(
-            icon:         _NotificationsBadge(selected: false),
-            selectedIcon: _NotificationsBadge(selected: true),
-            label:        'Notifiche',
+          FloatingNavItem(
+            icon: _NotificationsBadge(selected: sel == 3),
+            label: 'Notifiche',
+            selected: sel == 3,
+            onTap: () => context.go('/staff/notifications'),
           ),
         ],
       ),
@@ -51,20 +67,10 @@ class StaffShell extends ConsumerWidget {
   }
 
   int _index(String loc) {
-    if (loc.startsWith('/staff/courses') ||
-        loc.startsWith('/staff/roster'))        { return 1; }
-    if (loc.startsWith('/staff/studio'))        { return 2; }
-    if (loc.startsWith('/staff/notifications')) { return 3; }
+    if (loc.startsWith('/staff/courses') || loc.startsWith('/staff/roster')) return 1;
+    if (loc.startsWith('/staff/studio'))                                      return 2;
+    if (loc.startsWith('/staff/notifications'))                               return 3;
     return 0;
-  }
-
-  void _nav(BuildContext context, int i) {
-    switch (i) {
-      case 0: context.go('/staff/calendar');
-      case 1: context.go('/staff/courses');
-      case 2: context.go('/staff/studio');
-      case 3: context.go('/staff/notifications');
-    }
   }
 }
 
@@ -75,8 +81,11 @@ class _NotificationsBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final count = ref.watch(unreadNotificationsCountProvider);
-    final icon  = Icon(
+    final color = selected ? Colors.white : Colors.white54;
+    final icon = Icon(
       selected ? Icons.notifications : Icons.notifications_outlined,
+      color: color,
+      size: 22,
     );
     if (count == 0) return icon;
     return Badge(label: Text('$count'), child: icon);

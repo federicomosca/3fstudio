@@ -121,20 +121,22 @@ class PlansScreen extends ConsumerWidget {
 
   Future<void> _approveRequest(BuildContext context, WidgetRef ref,
       Map<String, dynamic> request) async {
-    final plan      = request['plans'] as Map<String, dynamic>? ?? {};
-    final user      = request['users'] as Map<String, dynamic>? ?? {};
-    final planName  = plan['name'] as String? ?? '—';
-    final userName  = user['full_name'] as String? ?? '—';
-    final planType  = plan['type'] as String? ?? 'credits';
-    final credits   = plan['credits'] as int?;
-    final duration  = plan['duration_days'] as int?;
+    final plan       = request['plans']   as Map<String, dynamic>? ?? {};
+    final user       = request['users']   as Map<String, dynamic>? ?? {};
+    final course     = request['courses'] as Map<String, dynamic>?;
+    final planName   = plan['name']       as String? ?? '—';
+    final userName   = user['full_name']  as String? ?? '—';
+    final courseName = course?['name']    as String?;
+    final planType   = plan['type']       as String? ?? 'credits';
+    final credits    = plan['credits']    as int?;
+    final duration   = plan['duration_days'] as int?;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Attiva piano'),
         content: Text(
-          'Attivare "$planName" per $userName?\n\n'
+          'Attivare "$planName"${courseName != null ? ' per il corso "$courseName"' : ''} a $userName?\n\n'
           'Assicurati di aver ricevuto il pagamento prima di procedere.',
         ),
         actions: [

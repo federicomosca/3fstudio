@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/shared/providers/notifications_provider.dart';
+import 'floating_nav_item.dart';
 import 'sede_selector_bar.dart';
 
 class ClientShell extends ConsumerWidget {
@@ -12,6 +13,7 @@ class ClientShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final loc = GoRouterState.of(context).matchedLocation;
+    final sel = _index(loc);
 
     return Scaffold(
       body: Column(
@@ -20,34 +22,53 @@ class ClientShell extends ConsumerWidget {
           Expanded(child: child),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index(loc),
-        onDestinationSelected: (i) => _nav(context, i),
-        destinations: [
-          const NavigationDestination(
-            icon:         Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today),
-            label:        'Calendario',
+      bottomNavigationBar: FloatingNavBar(
+        items: [
+          FloatingNavItem(
+            icon: Icon(
+              sel == 0 ? Icons.calendar_today : Icons.calendar_today_outlined,
+              color: sel == 0 ? Colors.white : Colors.white54,
+              size: 22,
+            ),
+            label: 'Calendario',
+            selected: sel == 0,
+            onTap: () => context.go('/client/calendar'),
           ),
-          const NavigationDestination(
-            icon:         Icon(Icons.fitness_center_outlined),
-            selectedIcon: Icon(Icons.fitness_center),
-            label:        'Corsi',
+          FloatingNavItem(
+            icon: Icon(
+              sel == 1 ? Icons.fitness_center : Icons.fitness_center_outlined,
+              color: sel == 1 ? Colors.white : Colors.white54,
+              size: 22,
+            ),
+            label: 'Corsi',
+            selected: sel == 1,
+            onTap: () => context.go('/client/courses'),
           ),
-          const NavigationDestination(
-            icon:         Icon(Icons.bookmark_outline),
-            selectedIcon: Icon(Icons.bookmark),
-            label:        'Prenotazioni',
+          FloatingNavItem(
+            icon: Icon(
+              sel == 2 ? Icons.bookmark : Icons.bookmark_outline,
+              color: sel == 2 ? Colors.white : Colors.white54,
+              size: 22,
+            ),
+            label: 'Prenotazioni',
+            selected: sel == 2,
+            onTap: () => context.go('/client/bookings'),
           ),
-          const NavigationDestination(
-            icon:         Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label:        'Studio',
+          FloatingNavItem(
+            icon: Icon(
+              sel == 3 ? Icons.home : Icons.home_outlined,
+              color: sel == 3 ? Colors.white : Colors.white54,
+              size: 22,
+            ),
+            label: 'Studio',
+            selected: sel == 3,
+            onTap: () => context.go('/client/studio'),
           ),
-          NavigationDestination(
-            icon:         _NotificationsBadge(selected: false),
-            selectedIcon: _NotificationsBadge(selected: true),
-            label:        'Notifiche',
+          FloatingNavItem(
+            icon: _NotificationsBadge(selected: sel == 4),
+            label: 'Notifiche',
+            selected: sel == 4,
+            onTap: () => context.go('/client/notifications'),
           ),
         ],
       ),
@@ -59,17 +80,7 @@ class ClientShell extends ConsumerWidget {
     if (loc.startsWith('/client/bookings'))      return 2;
     if (loc.startsWith('/client/studio'))        return 3;
     if (loc.startsWith('/client/notifications')) return 4;
-    return 0; // calendar
-  }
-
-  void _nav(BuildContext context, int i) {
-    switch (i) {
-      case 0: context.go('/client/calendar');
-      case 1: context.go('/client/courses');
-      case 2: context.go('/client/bookings');
-      case 3: context.go('/client/studio');
-      case 4: context.go('/client/notifications');
-    }
+    return 0;
   }
 }
 
@@ -80,8 +91,11 @@ class _NotificationsBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final count = ref.watch(unreadNotificationsCountProvider);
-    final icon  = Icon(
+    final color = selected ? Colors.white : Colors.white54;
+    final icon = Icon(
       selected ? Icons.notifications : Icons.notifications_outlined,
+      color: color,
+      size: 22,
     );
     if (count == 0) return icon;
     return Badge(label: Text('$count'), child: icon);
