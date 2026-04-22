@@ -105,6 +105,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               onBook: _book,
               onCancel: _cancel,
               onBookTrial: _bookTrial,
+              onCancelTrial: _cancelTrial,
               onJoinWaitlist: _joinWaitlist,
               onLeaveWaitlist: _leaveWaitlist,
             ),
@@ -166,6 +167,41 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Richiesta inviata per ${lesson.courseName}!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _cancelTrial(String lessonId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Annulla richiesta di prova'),
+        content: const Text('Sei sicuro di voler annullare la richiesta?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Mantieni'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sì, annulla', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    try {
+      await ref.read(bookingNotifierProvider.notifier).cancelTrialRequest(lessonId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Richiesta di prova annullata')),
         );
       }
     } catch (e) {
@@ -298,6 +334,7 @@ class _LessonList extends ConsumerWidget {
     required this.onBook,
     required this.onCancel,
     required this.onBookTrial,
+    required this.onCancelTrial,
     required this.onJoinWaitlist,
     required this.onLeaveWaitlist,
   });
@@ -306,17 +343,19 @@ class _LessonList extends ConsumerWidget {
   final void Function(String) onBook;
   final void Function(Lesson) onCancel;
   final void Function(Lesson) onBookTrial;
+  final void Function(String) onCancelTrial;
   final void Function(String) onJoinWaitlist;
   final void Function(String) onLeaveWaitlist;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lessons       = ref.watch(lessonsForDayProvider(selectedDay));
-    final userBookings  = ref.watch(userBookingsProvider);
-    final hasActivePlan = ref.watch(hasActivePlanProvider);
-    final enrolled      = ref.watch(userEnrolledCourseIdsProvider);
-    final pending       = ref.watch(userPendingTrialLessonsProvider);
-    final waitlist      = ref.watch(userWaitlistProvider);
+    final lessons        = ref.watch(lessonsForDayProvider(selectedDay));
+    final userBookings   = ref.watch(userBookingsProvider);
+    final hasActivePlan  = ref.watch(hasActivePlanProvider);
+    final hasTrialCredit = ref.watch(hasTrialCreditsProvider);
+    final enrolled       = ref.watch(userEnrolledCourseIdsProvider);
+    final pending        = ref.watch(userPendingTrialLessonsProvider);
+    final waitlist       = ref.watch(userWaitlistProvider);
 
     return lessons.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -343,9 +382,10 @@ class _LessonList extends ConsumerWidget {
           );
         }
 
-        final bookedIds     = userBookings.whenOrNull(data: (ids) => ids) ?? {};
-        final clientHasPlan = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
-        final enrolledIds   = enrolled.whenOrNull(data: (ids) => ids) ?? {};
+        final bookingMap        = userBookings.whenOrNull(data: (m) => m) ?? {};
+        final clientHasPlan     = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
+        final clientHasTrial    = hasTrialCredit.whenOrNull(data: (v) => v) ?? false;
+        final enrolledIds       = enrolled.whenOrNull(data: (ids) => ids) ?? {};
         final pendingIds    = pending.whenOrNull(data: (ids) => ids) ?? {};
         final waitlistIds   = waitlist.whenOrNull(data: (ids) => ids) ?? {};
 
@@ -353,22 +393,24 @@ class _LessonList extends ConsumerWidget {
           padding: const EdgeInsets.only(bottom: 100),
           itemCount: lessonList.length,
           itemBuilder: (context, index) {
-            final lesson        = lessonList[index];
-            final isBooked      = bookedIds.contains(lesson.id);
-            final isPending     = pendingIds.contains(lesson.id);
-            final isOnWaitlist  = waitlistIds.contains(lesson.id);
+            final lesson       = lessonList[index];
+            final bookingStatus = bookingMap[lesson.id];
+            final isPending    = pendingIds.contains(lesson.id);
+            final isOnWaitlist = waitlistIds.contains(lesson.id);
 
             return LessonCard(
               key: ValueKey(lesson.id),
               lesson: lesson,
-              isBooked: isBooked,
+              bookingStatus: bookingStatus,
               hasActivePlan: clientHasPlan && enrolledIds.contains(lesson.courseId),
+              hasTrialCredits: clientHasTrial && !enrolledIds.contains(lesson.courseId),
               isPendingTrial: isPending,
               isOnWaitlist: isOnWaitlist,
               bookedCount: lesson.bookedCount,
               onBook: () => onBook(lesson.id),
               onCancel: () => onCancel(lesson),
               onBookTrial: () => onBookTrial(lesson),
+              onCancelTrial: () => onCancelTrial(lesson.id),
               onJoinWaitlist: () => onJoinWaitlist(lesson.id),
               onLeaveWaitlist: () => onLeaveWaitlist(lesson.id),
             );

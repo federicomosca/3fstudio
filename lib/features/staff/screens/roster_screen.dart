@@ -148,13 +148,20 @@ class RosterScreen extends ConsumerWidget {
                       itemCount: roster.length,
                       separatorBuilder: (context, i) =>
                           const SizedBox(height: 8),
-                      itemBuilder: (context, i) => _AttendeeRow(
-                        booking: roster[i],
-                        onStatusChange: (newStatus) async {
-                          await _updateStatus(
-                              context, ref, roster[i], newStatus);
-                        },
-                      ),
+                      itemBuilder: (context, i) {
+                        final lesson = lessonAsync.asData?.value;
+                        final endsAt = lesson != null
+                            ? DateTime.parse(lesson['ends_at'] as String).toLocal()
+                            : DateTime.now();
+                        return _AttendeeRow(
+                          booking: roster[i],
+                          canMark: DateTime.now().isAfter(endsAt),
+                          onStatusChange: (newStatus) async {
+                            await _updateStatus(
+                                context, ref, roster[i], newStatus);
+                          },
+                        );
+                      },
                     ),
             ),
           ),
@@ -254,9 +261,10 @@ class RosterScreen extends ConsumerWidget {
 
 class _AttendeeRow extends StatelessWidget {
   final Map<String, dynamic> booking;
+  final bool canMark;
   final void Function(String newStatus) onStatusChange;
   const _AttendeeRow(
-      {required this.booking, required this.onStatusChange});
+      {required this.booking, required this.canMark, required this.onStatusChange});
 
   @override
   Widget build(BuildContext context) {
@@ -288,6 +296,7 @@ class _AttendeeRow extends StatelessWidget {
         subtitle: _StatusChip(status: status),
         trailing: _AttendanceButtons(
           status: status,
+          canMark: canMark,
           onPresent:  () => onStatusChange('attended'),
           onAbsent:   () => onStatusChange('no_show'),
           onReset:    () => onStatusChange('confirmed'),
@@ -362,17 +371,29 @@ class _StatusChip extends StatelessWidget {
 
 class _AttendanceButtons extends StatelessWidget {
   final String status;
+  final bool canMark;
   final VoidCallback onPresent;
   final VoidCallback onAbsent;
   final VoidCallback onReset;
   const _AttendanceButtons(
       {required this.status,
+      required this.canMark,
       required this.onPresent,
       required this.onAbsent,
       required this.onReset});
 
   @override
   Widget build(BuildContext context) {
+    if (!canMark) {
+      return Tooltip(
+        message: 'Disponibile dopo la fine della lezione',
+        child: Icon(
+          Icons.lock_clock_outlined,
+          color: Theme.of(context).colorScheme.onSurface.withAlpha(80),
+        ),
+      );
+    }
+
     if (status == 'attended') {
       return Row(
         mainAxisSize: MainAxisSize.min,

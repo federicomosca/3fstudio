@@ -45,6 +45,18 @@ class SupabaseBookingDataSource implements BookingDataSource {
   }
 
   @override
+  Future<String> bookIfAvailable({
+    required String userId,
+    required String lessonId,
+  }) async {
+    final result = await _client.rpc('book_if_available', params: {
+      'p_lesson_id': lessonId,
+      'p_user_id': userId,
+    });
+    return result as String;
+  }
+
+  @override
   Future<void> updateBookingStatus({
     required String userId,
     required String lessonId,
@@ -63,5 +75,20 @@ class SupabaseBookingDataSource implements BookingDataSource {
         .from('user_plans')
         .update({'credits_remaining': currentCredits - 1})
         .eq('id', planId);
+  }
+
+  @override
+  Future<void> refundCredit(String planId, int currentCredits) async {
+    await _client
+        .from('user_plans')
+        .update({'credits_remaining': currentCredits + 1})
+        .eq('id', planId);
+  }
+
+  @override
+  Future<void> promoteFromWaitlist(String lessonId) async {
+    await _client.rpc('promote_from_waitlist', params: {
+      'p_lesson_id': lessonId,
+    });
   }
 }

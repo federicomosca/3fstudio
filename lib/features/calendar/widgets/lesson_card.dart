@@ -6,28 +6,33 @@ import '../../../core/models/lesson.dart';
 
 class LessonCard extends StatelessWidget {
   final Lesson lesson;
-  final bool isBooked;
+  /// null = non prenotato, 'confirmed' | 'attended' | 'no_show'
+  final String? bookingStatus;
   final bool hasActivePlan;
+  final bool hasTrialCredits;
   final bool isPendingTrial;
   final bool isOnWaitlist;
   final int bookedCount;
   final VoidCallback? onBook;
   final VoidCallback? onCancel;
   final VoidCallback? onBookTrial;
+  final VoidCallback? onCancelTrial;
   final VoidCallback? onJoinWaitlist;
   final VoidCallback? onLeaveWaitlist;
 
   const LessonCard({
     super.key,
     required this.lesson,
-    required this.isBooked,
     required this.bookedCount,
+    this.bookingStatus,
     this.hasActivePlan = false,
+    this.hasTrialCredits = false,
     this.isPendingTrial = false,
     this.isOnWaitlist = false,
     this.onBook,
     this.onCancel,
     this.onBookTrial,
+    this.onCancelTrial,
     this.onJoinWaitlist,
     this.onLeaveWaitlist,
   });
@@ -37,7 +42,8 @@ class LessonCard extends StatelessWidget {
     final theme = Theme.of(context);
     final timeFormat = DateFormat('HH:mm');
     final spotsLeft = lesson.capacity - bookedCount;
-    final isFull = spotsLeft <= 0 && !isBooked;
+    final isConfirmed = bookingStatus == 'confirmed';
+    final isFull = spotsLeft <= 0 && !isConfirmed;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -66,11 +72,15 @@ class LessonCard extends StatelessWidget {
               width: 2,
               height: 64,
               decoration: BoxDecoration(
-                color: isBooked
-                    ? theme.colorScheme.primary
-                    : isPendingTrial
-                        ? Colors.orange
-                        : theme.colorScheme.outline,
+                color: bookingStatus == 'attended'
+                    ? Colors.green
+                    : bookingStatus == 'no_show'
+                        ? Colors.grey
+                        : isConfirmed
+                            ? theme.colorScheme.primary
+                            : isPendingTrial
+                                ? Colors.orange
+                                : theme.colorScheme.outline,
                 borderRadius: BorderRadius.circular(1),
               ),
             ),
@@ -158,24 +168,21 @@ class LessonCard extends StatelessWidget {
   Widget _buildButton(BuildContext context, bool isFull) {
     final isPast = lesson.startTime.isBefore(DateTime.now());
 
-    // Lezione passata e non prenotata → nessuna azione disponibile
-    if (isPast && !isBooked) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.grey.withAlpha(20),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.withAlpha(60)),
-        ),
-        child: Text(
-          'Conclusa',
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-        ),
-      );
+    // ── Lezione già iniziata ──────────────────────────────────────────────────
+    if (isPast) {
+      if (bookingStatus == 'attended') {
+        return _badge('Presente', Colors.green);
+      }
+      if (bookingStatus == 'no_show') {
+        return _badge('Assente', Colors.grey);
+      }
+      // confirmed ma il trainer non ha ancora segnato le presenze, waitlist, o non prenotato
+      return _badge('Conclusa', Colors.grey);
     }
 
-    // Prenotazione confermata → mostra annulla
-    if (isBooked) {
+    // ── Lezione futura ────────────────────────────────────────────────────────
+
+    if (bookingStatus == 'confirmed') {
       return OutlinedButton(
         onPressed: onCancel,
         style: OutlinedButton.styleFrom(
@@ -187,23 +194,18 @@ class LessonCard extends StatelessWidget {
       );
     }
 
-    // Richiesta prova già inviata → chip arancione
     if (isPendingTrial) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.orange.withAlpha(25),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.orange.withAlpha(120)),
+      return OutlinedButton(
+        onPressed: onCancelTrial,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.orange,
+          side: BorderSide(color: Colors.orange.withAlpha(180)),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         ),
-        child: const Text(
-          'In attesa',
-          style: TextStyle(fontSize: 11, color: Color(0xFFFFB74D)),
-        ),
+        child: const Text('In attesa', style: TextStyle(fontSize: 12)),
       );
     }
 
-    // Lezione piena → gestione lista d'attesa
     if (isFull) {
       if (isOnWaitlist) {
         return OutlinedButton(
@@ -227,8 +229,7 @@ class LessonCard extends StatelessWidget {
       );
     }
 
-    // Nessun piano attivo → bottone prova
-    if (!hasActivePlan) {
+    if (hasTrialCredits) {
       return OutlinedButton(
         onPressed: onBookTrial,
         style: OutlinedButton.styleFrom(
@@ -240,7 +241,8 @@ class LessonCard extends StatelessWidget {
       );
     }
 
-    // Iscritto → prenotazione normale
+    if (!hasActivePlan) return const SizedBox.shrink();
+
     return ElevatedButton(
       onPressed: onBook,
       style: ElevatedButton.styleFrom(
@@ -248,6 +250,21 @@ class LessonCard extends StatelessWidget {
         minimumSize: Size.zero,
       ),
       child: const Text('Prenota', style: TextStyle(fontSize: 12)),
+    );
+  }
+
+  Widget _badge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withAlpha(80)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 11, color: color.withAlpha(200)),
+      ),
     );
   }
 }

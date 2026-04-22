@@ -12,6 +12,12 @@ abstract class BookingDataSource {
     bool isTrial = false,
   });
 
+  /// Atomic capacity-checked booking. Returns 'booked' or 'full'.
+  Future<String> bookIfAvailable({
+    required String userId,
+    required String lessonId,
+  });
+
   Future<void> updateBookingStatus({
     required String userId,
     required String lessonId,
@@ -19,4 +25,9 @@ abstract class BookingDataSource {
   });
 
   Future<void> deductCredit(String planId, int currentCredits);
+
+  Future<void> refundCredit(String planId, int currentCredits);
+
+  /// Promotes the first waitlisted user to a confirmed booking.
+  Future<void> promoteFromWaitlist(String lessonId);
 }

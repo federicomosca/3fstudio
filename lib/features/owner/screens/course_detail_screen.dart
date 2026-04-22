@@ -220,6 +220,9 @@ class _CourseBody extends ConsumerWidget {
     final clientHasPlan = clientMode
         ? (ref.watch(hasActivePlanProvider).whenOrNull(data: (v) => v) ?? false)
         : false;
+    final clientHasTrial = clientMode
+        ? (ref.watch(hasTrialCreditsProvider).whenOrNull(data: (v) => v) ?? false)
+        : false;
     final enrolledIds = clientMode
         ? (ref.watch(userEnrolledCourseIdsProvider).whenOrNull(data: (ids) => ids) ?? <String>{})
         : const <String>{};
@@ -416,6 +419,7 @@ class _CourseBody extends ConsumerWidget {
                       clientMode: clientMode,
                       isBooked: bookedIds.contains(lessons[i]['id'] as String),
                       hasActivePlan: clientHasPlan && enrolledIds.contains(courseId),
+                      hasTrialCredits: clientHasTrial && !enrolledIds.contains(courseId),
                       onBookingChanged: onBookingChanged,
                     ),
                   ),
@@ -707,6 +711,7 @@ class _LessonRow extends ConsumerStatefulWidget {
   final bool clientMode;
   final bool isBooked;
   final bool hasActivePlan;
+  final bool hasTrialCredits;
   final VoidCallback onBookingChanged;
 
   const _LessonRow({
@@ -715,6 +720,7 @@ class _LessonRow extends ConsumerStatefulWidget {
     required this.isBooked,
     required this.onBookingChanged,
     this.hasActivePlan = false,
+    this.hasTrialCredits = false,
   });
 
   @override
@@ -953,7 +959,7 @@ class _LessonRowState extends ConsumerState<_LessonRow> {
                               child: const Text('Completo',
                                   style: TextStyle(fontSize: 12)),
                             )
-                          : !widget.hasActivePlan
+                          : widget.hasTrialCredits
                               ? OutlinedButton(
                                   onPressed: _bookTrial,
                                   style: OutlinedButton.styleFrom(
@@ -967,7 +973,9 @@ class _LessonRowState extends ConsumerState<_LessonRow> {
                                   child: const Text('Prova',
                                       style: TextStyle(fontSize: 12)),
                                 )
-                              : ElevatedButton(
+                              : !widget.hasActivePlan
+                                  ? const SizedBox.shrink()
+                                  : ElevatedButton(
                                   onPressed: _book,
                                   style: ElevatedButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(

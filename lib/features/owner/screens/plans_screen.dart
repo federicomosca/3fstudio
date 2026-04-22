@@ -577,8 +577,12 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
   final _creditCt = TextEditingController();
   final _daysCt   = TextEditingController();
 
-  String _type    = 'credits';
-  bool   _saving  = false;
+  String _type        = 'credits';
+  // Solo per tipo trial: 'credits' | 'duration'
+  String _trialMode   = 'credits';
+  // Solo per tipo trial + trialMode duration: 'days' | 'weeks'
+  String _durationUnit = 'days';
+  bool   _saving      = false;
 
   static const _types = [
     ('credits',   'Crediti',    Icons.confirmation_number_outlined),
@@ -591,18 +595,43 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
     super.initState();
     final e = widget.existing;
     if (e != null) {
-      _nameCt.text   = e['name']          as String? ?? '';
-      _creditCt.text = (e['credits'] as int?)?.toString() ?? '';
-      _daysCt.text   = (e['duration_days'] as int?)?.toString() ?? '';
-      _type          = e['type']           as String? ?? 'credits';
+      _nameCt.text = e['name'] as String? ?? '';
+      _type        = e['type'] as String? ?? 'credits';
+      final credits  = e['credits']      as int?;
+      final days     = e['duration_days'] as int?;
+      if (_type == 'trial') {
+        if (credits != null) {
+          _trialMode   = 'credits';
+          _creditCt.text = credits.toString();
+        } else if (days != null) {
+          _trialMode = 'duration';
+          if (days % 7 == 0) {
+            _durationUnit  = 'weeks';
+            _daysCt.text   = (days ~/ 7).toString();
+          } else {
+            _durationUnit  = 'days';
+            _daysCt.text   = days.toString();
+          }
+        }
+      } else {
+        _creditCt.text = credits?.toString() ?? '';
+        _daysCt.text   = days?.toString()    ?? '';
+      }
     }
   }
 
   @override
   void dispose() {
     _nameCt.dispose();
-    _creditCt.dispose(); _daysCt.dispose();
+    _creditCt.dispose();
+    _daysCt.dispose();
     super.dispose();
+  }
+
+  int? get _computedDurationDays {
+    final n = int.tryParse(_daysCt.text.trim());
+    if (n == null) return null;
+    return _durationUnit == 'weeks' ? n * 7 : n;
   }
 
   Future<void> _save() async {
@@ -611,23 +640,33 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
     try {
       final studioId = ref.read(currentStudioIdProvider);
       final client   = ref.read(supabaseClientProvider);
-      final payload  = {
+
+      int?  credits;
+      int?  durationDays;
+
+      if (_type == 'credits') {
+        credits     = int.tryParse(_creditCt.text);
+        durationDays = _daysCt.text.isNotEmpty ? int.tryParse(_daysCt.text) : null;
+      } else if (_type == 'unlimited') {
+        durationDays = _daysCt.text.isNotEmpty ? int.tryParse(_daysCt.text) : null;
+      } else { // trial
+        if (_trialMode == 'credits') {
+          credits = int.tryParse(_creditCt.text);
+        } else {
+          durationDays = _computedDurationDays;
+        }
+      }
+
+      final payload = {
         'name':          _nameCt.text.trim(),
         'type':          _type,
-        'credits':       _type == 'credits'
-            ? int.tryParse(_creditCt.text)
-            : null,
-        'duration_days': _daysCt.text.isNotEmpty
-            ? int.tryParse(_daysCt.text)
-            : null,
+        'credits':       credits,
+        'duration_days': durationDays,
         'studio_id':     studioId,
       };
 
       if (widget.existing != null) {
-        await client
-            .from('plans')
-            .update(payload)
-            .eq('id', widget.existing!['id']);
+        await client.from('plans').update(payload).eq('id', widget.existing!['id']);
       } else {
         await client.from('plans').insert(payload);
       }
@@ -636,9 +675,8 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Errore: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -647,7 +685,7 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final cs  = Theme.of(context).colorScheme;
+    final cs     = Theme.of(context).colorScheme;
     final isEdit = widget.existing != null;
 
     return Padding(
@@ -666,9 +704,7 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
               child: Container(
                 width: 36, height: 4,
                 decoration: BoxDecoration(
-                  color: cs.outline,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+                  color: cs.outline, borderRadius: BorderRadius.circular(2)),
               ),
             ),
             const SizedBox(height: 16),
@@ -679,7 +715,7 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
             ),
             const SizedBox(height: 20),
 
-            // Nome
+            // ── Nome ──────────────────────────────────────────────────────────
             TextFormField(
               controller: _nameCt,
               decoration: const InputDecoration(labelText: 'Nome piano'),
@@ -689,11 +725,10 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
             ),
             const SizedBox(height: 14),
 
-            // Tipo
+            // ── Tipo ──────────────────────────────────────────────────────────
             Text('Tipo',
                 style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 12, fontWeight: FontWeight.w700,
                     color: cs.onSurface.withAlpha(150))),
             const SizedBox(height: 8),
             Row(
@@ -707,9 +742,7 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
                       margin: const EdgeInsets.only(right: 8),
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color: selected
-                            ? AppTheme.blue.withAlpha(40)
-                            : cs.surface,
+                        color: selected ? AppTheme.blue.withAlpha(40) : cs.surface,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
                           color: selected ? AppTheme.blue : cs.outline,
@@ -718,16 +751,14 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
                       ),
                       child: Column(
                         children: [
-                          Icon(icon,
-                              size: 20,
+                          Icon(icon, size: 20,
                               color: selected
                                   ? AppTheme.blue
                                   : cs.onSurface.withAlpha(120)),
                           const SizedBox(height: 4),
                           Text(label,
                               style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                                  fontSize: 11, fontWeight: FontWeight.w700,
                                   color: selected
                                       ? AppTheme.blue
                                       : cs.onSurface.withAlpha(150))),
@@ -740,29 +771,118 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
             ),
             const SizedBox(height: 14),
 
-            // N. lezioni (solo tipo crediti)
-            if (_type == 'credits')
+            // ── Campi per tipo Crediti ─────────────────────────────────────
+            if (_type == 'credits') ...[
               TextFormField(
                 controller: _creditCt,
                 decoration: const InputDecoration(labelText: 'N. lezioni'),
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               ),
-            const SizedBox(height: 14),
-
-            // Durata giorni
-            TextFormField(
-              controller: _daysCt,
-              decoration: const InputDecoration(
-                labelText: 'Durata (giorni)',
-                hintText: 'es. 30, 90, 365 — lascia vuoto per illimitata',
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _daysCt,
+                decoration: const InputDecoration(
+                  labelText: 'Durata (giorni)',
+                  hintText: 'es. 30, 90, 365 — lascia vuoto per illimitata',
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               ),
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            ),
+            ],
+
+            // ── Campi per tipo Illimitato ──────────────────────────────────
+            if (_type == 'unlimited')
+              TextFormField(
+                controller: _daysCt,
+                decoration: const InputDecoration(
+                  labelText: 'Durata (giorni)',
+                  hintText: 'es. 30, 90, 365 — lascia vuoto per illimitata',
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+
+            // ── Campi per tipo Prova ───────────────────────────────────────
+            if (_type == 'trial') ...[
+              // Sub-toggle Crediti / Durata
+              Text('Modalità prova',
+                  style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700,
+                      color: cs.onSurface.withAlpha(150))),
+              const SizedBox(height: 8),
+              Row(children: [
+                _ModeToggle(
+                  label: 'Crediti',
+                  icon: Icons.confirmation_number_outlined,
+                  selected: _trialMode == 'credits',
+                  onTap: () => setState(() => _trialMode = 'credits'),
+                ),
+                const SizedBox(width: 8),
+                _ModeToggle(
+                  label: 'Durata',
+                  icon: Icons.calendar_today_outlined,
+                  selected: _trialMode == 'duration',
+                  onTap: () => setState(() => _trialMode = 'duration'),
+                ),
+              ]),
+              const SizedBox(height: 14),
+
+              if (_trialMode == 'credits')
+                TextFormField(
+                  controller: _creditCt,
+                  decoration: const InputDecoration(labelText: 'N. crediti prova'),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Campo obbligatorio' : null,
+                ),
+
+              if (_trialMode == 'duration')
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  SizedBox(
+                    width: 90,
+                    child: TextFormField(
+                      controller: _daysCt,
+                      decoration: const InputDecoration(labelText: 'Quantità'),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Obbligatorio' : null,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Unità',
+                            style: TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w700,
+                                color: cs.onSurface.withAlpha(150))),
+                        const SizedBox(height: 6),
+                        Row(children: [
+                          _ModeToggle(
+                            label: 'Giorni',
+                            selected: _durationUnit == 'days',
+                            onTap: () => setState(() => _durationUnit = 'days'),
+                          ),
+                          const SizedBox(width: 8),
+                          _ModeToggle(
+                            label: 'Settimane',
+                            selected: _durationUnit == 'weeks',
+                            onTap: () => setState(() => _durationUnit = 'weeks'),
+                          ),
+                        ]),
+                      ],
+                    ),
+                  ),
+                ]),
+            ],
+
             const SizedBox(height: 24),
 
-            // Save button
+            // ── Save ──────────────────────────────────────────────────────────
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -776,6 +896,52 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
                     : Text(isEdit ? 'Salva modifiche' : 'Crea piano'),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeToggle extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ModeToggle({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.blue.withAlpha(40) : cs.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? AppTheme.blue : cs.outline,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 16,
+                  color: selected ? AppTheme.blue : cs.onSurface.withAlpha(120)),
+              const SizedBox(width: 6),
+            ],
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w700,
+                    color: selected ? AppTheme.blue : cs.onSurface.withAlpha(150))),
           ],
         ),
       ),

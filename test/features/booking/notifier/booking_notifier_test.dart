@@ -25,6 +25,8 @@ class _FakeBookingDataSource implements BookingDataSource {
   String? lastUpdatedStatus;
   String? deductedPlanId;
   int? deductedFromCredits;
+  String bookIfAvailableResult = 'booked';
+  String? lastBookIfAvailableUserId;
 
   Map<String, dynamic> lessonToReturn = {'course_id': 'course-a'};
   List<Map<String, dynamic>> plansToReturn = [];
@@ -49,6 +51,15 @@ class _FakeBookingDataSource implements BookingDataSource {
   }
 
   @override
+  Future<String> bookIfAvailable({
+    required String userId,
+    required String lessonId,
+  }) async {
+    lastBookIfAvailableUserId = userId;
+    return bookIfAvailableResult;
+  }
+
+  @override
   Future<void> updateBookingStatus({
     required String userId,
     required String lessonId,
@@ -62,6 +73,12 @@ class _FakeBookingDataSource implements BookingDataSource {
     deductedPlanId = planId;
     deductedFromCredits = currentCredits;
   }
+
+  @override
+  Future<void> refundCredit(String planId, int currentCredits) async {}
+
+  @override
+  Future<void> promoteFromWaitlist(String lessonId) async {}
 }
 
 Map<String, dynamic> _plan({
@@ -96,7 +113,7 @@ void main() {
   const userId = 'user-1';
 
   group('BookingNotifier.book()', () {
-    test('upserta con status confirmed quando piano valido', () async {
+    test('prenota via bookIfAvailable quando piano valido', () async {
       final ds = _FakeBookingDataSource()
         ..plansToReturn = [
           _plan(id: 'p1', type: 'credits', credits: 3)
@@ -107,8 +124,22 @@ void main() {
           .read(bookingNotifierProvider.notifier)
           .book(lessonId);
 
-      expect(ds.lastUpsertStatus, 'confirmed');
-      expect(ds.isTrial, isFalse);
+      expect(ds.lastBookIfAvailableUserId, userId);
+    });
+
+    test('lancia eccezione quando lezione al completo', () async {
+      final ds = _FakeBookingDataSource()
+        ..bookIfAvailableResult = 'full'
+        ..plansToReturn = [
+          _plan(id: 'p1', type: 'credits', credits: 3)
+        ];
+      final container = _makeContainer(user: _fakeUser(userId), ds: ds);
+
+      await expectLater(
+        container.read(bookingNotifierProvider.notifier).book(lessonId),
+        throwsA(isA<Exception>().having(
+            (e) => e.toString(), 'message', contains('al completo'))),
+      );
     });
 
     test('lancia eccezione quando nessun piano valido', () async {
