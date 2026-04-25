@@ -17,6 +17,15 @@ class AppTheme {
   static const Color primaryColor = navy;
   static const Color accentColor  = blue;
 
+  // Colori per sede (deterministici per indice)
+  static const List<Color> sedeColors = [
+    blue,                  // sede 0
+    Color(0xFFFF8C42),     // arancio  — sede 1
+    cyan,                  // teal     — sede 2
+    Color(0xFF9C77D4),     // viola    — sede 3
+  ];
+  static Color sedeColor(int index) => sedeColors[index % sedeColors.length];
+
   // Dark mode surfaces
   static const Color darkSurface = Color(0xFF0D1A27);
   static const Color darkBg      = Color(0xFF060E18);

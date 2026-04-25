@@ -260,6 +260,7 @@ class _NotifCard extends ConsumerWidget {
     final client = ref.read(supabaseClientProvider);
     try {
       await client.from('notifications').delete().eq('id', id);
+      ref.invalidate(notificationsProvider);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

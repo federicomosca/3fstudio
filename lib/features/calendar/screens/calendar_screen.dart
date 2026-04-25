@@ -59,7 +59,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 fontWeight: FontWeight.w800,
               ),
               selectedDecoration: BoxDecoration(
-                color: AppTheme.charcoal,
+                color: AppTheme.blue,
                 shape: BoxShape.circle,
               ),
               selectedTextStyle: TextStyle(
@@ -178,12 +178,23 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     }
   }
 
-  Future<void> _cancelTrial(String lessonId) async {
+  Future<void> _cancelTrial(Lesson lesson) async {
+    final hours = lesson.cancellationHours;
+    final insideWindow = hours > 0 &&
+        DateTime.now().isAfter(
+            lesson.startTime.subtract(Duration(hours: hours)));
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Annulla richiesta di prova'),
-        content: const Text('Sei sicuro di voler annullare la richiesta?'),
+        content: insideWindow
+            ? Text(
+                'La cancellazione gratuita era disponibile fino a '
+                '$hours ore prima della lezione.\n\n'
+                'Annullando ora verrà scalato 1 credito prova.',
+              )
+            : const Text('Sei sicuro di voler annullare la richiesta?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -191,17 +202,32 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Sì, annulla', style: TextStyle(color: Colors.red)),
+            child: Text(
+              insideWindow ? 'Annulla e scala credito' : 'Sì, annulla',
+              style: const TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
     );
     if (confirm != true || !mounted) return;
     try {
-      await ref.read(bookingNotifierProvider.notifier).cancelTrialRequest(lessonId);
+      if (insideWindow) {
+        await ref
+            .read(bookingNotifierProvider.notifier)
+            .cancelTrialWithDeduction(lesson.id);
+      } else {
+        await ref
+            .read(bookingNotifierProvider.notifier)
+            .cancelTrialRequest(lesson.id);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Richiesta di prova annullata')),
+          SnackBar(
+            content: Text(insideWindow
+                ? 'Richiesta annullata · 1 credito prova scalato'
+                : 'Richiesta di prova annullata'),
+          ),
         );
       }
     } catch (e) {
@@ -343,19 +369,20 @@ class _LessonList extends ConsumerWidget {
   final void Function(String) onBook;
   final void Function(Lesson) onCancel;
   final void Function(Lesson) onBookTrial;
-  final void Function(String) onCancelTrial;
+  final void Function(Lesson) onCancelTrial;
   final void Function(String) onJoinWaitlist;
   final void Function(String) onLeaveWaitlist;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lessons        = ref.watch(lessonsForDayProvider(selectedDay));
-    final userBookings   = ref.watch(userBookingsProvider);
-    final hasActivePlan  = ref.watch(hasActivePlanProvider);
-    final hasTrialCredit = ref.watch(hasTrialCreditsProvider);
-    final enrolled       = ref.watch(userEnrolledCourseIdsProvider);
-    final pending        = ref.watch(userPendingTrialLessonsProvider);
-    final waitlist       = ref.watch(userWaitlistProvider);
+    final lessons          = ref.watch(lessonsForDayProvider(selectedDay));
+    final userBookings     = ref.watch(userBookingsProvider);
+    final hasActivePlan    = ref.watch(hasActivePlanProvider);
+    final hasTrialCredit   = ref.watch(hasTrialCreditsProvider);
+    final hasTrialTime     = ref.watch(hasTrialTimePlanProvider);
+    final enrolled         = ref.watch(userEnrolledCourseIdsProvider);
+    final pending          = ref.watch(userPendingTrialLessonsProvider);
+    final waitlist         = ref.watch(userWaitlistProvider);
 
     return lessons.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -382,12 +409,13 @@ class _LessonList extends ConsumerWidget {
           );
         }
 
-        final bookingMap        = userBookings.whenOrNull(data: (m) => m) ?? {};
-        final clientHasPlan     = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
-        final clientHasTrial    = hasTrialCredit.whenOrNull(data: (v) => v) ?? false;
-        final enrolledIds       = enrolled.whenOrNull(data: (ids) => ids) ?? {};
-        final pendingIds    = pending.whenOrNull(data: (ids) => ids) ?? {};
-        final waitlistIds   = waitlist.whenOrNull(data: (ids) => ids) ?? {};
+        final bookingMap          = userBookings.whenOrNull(data: (m) => m) ?? {};
+        final clientHasPlan       = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
+        final clientHasTrial      = hasTrialCredit.whenOrNull(data: (v) => v) ?? false;
+        final clientHasTrialTime  = hasTrialTime.whenOrNull(data: (v) => v) ?? false;
+        final enrolledIds         = enrolled.whenOrNull(data: (ids) => ids) ?? {};
+        final pendingIds          = pending.whenOrNull(data: (ids) => ids) ?? {};
+        final waitlistIds         = waitlist.whenOrNull(data: (ids) => ids) ?? {};
 
         return ListView.builder(
           padding: const EdgeInsets.only(bottom: 100),
@@ -402,7 +430,9 @@ class _LessonList extends ConsumerWidget {
               key: ValueKey(lesson.id),
               lesson: lesson,
               bookingStatus: bookingStatus,
-              hasActivePlan: clientHasPlan && enrolledIds.contains(lesson.courseId),
+              // trial-by-time bypassa il check di enrollment (accesso libero a tutti i corsi)
+              hasActivePlan: clientHasTrialTime ||
+                  (clientHasPlan && enrolledIds.contains(lesson.courseId)),
               hasTrialCredits: clientHasTrial && !enrolledIds.contains(lesson.courseId),
               isPendingTrial: isPending,
               isOnWaitlist: isOnWaitlist,
@@ -410,7 +440,7 @@ class _LessonList extends ConsumerWidget {
               onBook: () => onBook(lesson.id),
               onCancel: () => onCancel(lesson),
               onBookTrial: () => onBookTrial(lesson),
-              onCancelTrial: () => onCancelTrial(lesson.id),
+              onCancelTrial: () => onCancelTrial(lesson),
               onJoinWaitlist: () => onJoinWaitlist(lesson.id),
               onLeaveWaitlist: () => onLeaveWaitlist(lesson.id),
             );

@@ -7,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
+import '../../../core/providers/selected_studio_provider.dart';
 import '../../../shared/widgets/recurring_section.dart';
 
 // ── Providers ────────────────────────────────────────────────────────────────
@@ -22,19 +23,22 @@ final _staffSelectedDayProvider =
 
 final _staffLessonsForDayProvider =
     FutureProvider.family<List<Map<String, dynamic>>, DateTime>((ref, date) async {
-  final studioId = ref.watch(currentStudioIdProvider);
-  if (studioId == null) return [];
+  final sedi = await ref.watch(userSediProvider.future);
+  if (sedi.isEmpty) return [];
 
   final client = ref.watch(supabaseClientProvider);
+  final allStudioIds = sedi.map((s) => s.id).toList();
   final start  = DateTime(date.year, date.month, date.day).toUtc().toIso8601String();
   final end    = DateTime(date.year, date.month, date.day + 1).toUtc().toIso8601String();
 
   final data = await client
       .from('lessons')
-      .select('id, starts_at, ends_at, capacity, status, trainer_id, courses!inner(name, type, class_owner_id, studio_id), users!trainer_id(full_name), bookings(count), waitlist(count)')
+      .select('id, starts_at, ends_at, capacity, status, trainer_id, '
+              'courses!inner(name, type, class_owner_id, studio_id, studios(name)), '
+              'users!trainer_id(full_name), bookings(count), waitlist(count)')
       .gte('starts_at', start)
       .lt('starts_at', end)
-      .eq('courses.studio_id', studioId)
+      .inFilter('courses.studio_id', allStudioIds)
       .order('starts_at');
 
   return (data as List)
@@ -89,10 +93,12 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
     final lessons      = ref.watch(_staffLessonsForDayProvider(selectedDay));
     final ownedCourses = ref.watch(_myOwnedCoursesProvider).whenOrNull(data: (c) => c) ?? [];
     final isCourseOwner = ownedCourses.isNotEmpty;
-    final user         = ref.watch(currentUserProvider);
-    final timeFmt      = DateFormat('HH:mm');
-    final dayFmt      = DateFormat('EEEE d MMMM', 'it_IT');
-    final theme       = Theme.of(context);
+    final user          = ref.watch(currentUserProvider);
+    final sedi          = ref.watch(userSediProvider).whenOrNull(data: (s) => s) ?? [];
+    final hasMulipleSedi = sedi.length > 1;
+    final timeFmt       = DateFormat('HH:mm');
+    final dayFmt        = DateFormat('EEEE d MMMM', 'it_IT');
+    final theme         = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -129,7 +135,7 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                 fontWeight: FontWeight.w800,
               ),
               selectedDecoration: BoxDecoration(
-                color: AppTheme.charcoal,
+                color: AppTheme.blue,
                 shape: BoxShape.circle,
               ),
               selectedTextStyle: TextStyle(
@@ -210,9 +216,24 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                             course['class_owner_id'] == user?.id;
                         final isMyLesson = l['trainer_id'] == user?.id || isCourseOwnerForThis;
 
+                        final studioId   = course['studio_id'] as String?;
+                        final studioData = course['studios'] as Map<String, dynamic>?;
+                        final sedeName   = studioData?['name'] as String?;
+                        final sedeIdx    = studioId != null
+                            ? sedi.indexWhere((s) => s.id == studioId)
+                            : -1;
+                        final sedeCol = AppTheme.sedeColor(sedeIdx >= 0 ? sedeIdx : 0);
+
                         return Card(
+                          clipBehavior: Clip.hardEdge,
                           margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
+                          child: IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (hasMulipleSedi)
+                                  Container(width: 4, color: sedeCol),
+                                Expanded(child: ListTile(
                             leading: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -266,6 +287,7 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                             ),
                             subtitle: Text([
                               ?trainer,
+                              ?(hasMulipleSedi ? sedeName : null),
                               wCount > 0
                                   ? '$count/$cap iscritti · $wCount in lista'
                                   : '$count/$cap iscritti',
@@ -313,8 +335,12 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                                         ),
                                     ],
                                   ),
-                          ),
-                        );
+                          ),      // closes ListTile
+                            ),    // closes Expanded
+                          ],      // closes Row.children
+                        ),        // closes Row
+                      ),          // closes IntrinsicHeight
+                    );            // closes Card
                       },
                     ),
             ),
@@ -421,6 +447,21 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
     try {
       if (count > 0) {
         await client.from('bookings').delete().eq('lesson_id', lessonId);
+        final studioId = ref.read(currentStudioIdProvider);
+        if (studioId != null) {
+          final courses = lesson['courses'] as Map<String, dynamic>?;
+          final courseName = courses?['name'] as String? ?? 'Lezione';
+          final startsAt =
+              DateTime.parse(lesson['starts_at'] as String).toLocal();
+          final label = DateFormat('d MMM, HH:mm', 'it').format(startsAt);
+          await client.from('notifications').insert({
+            'studio_id': studioId,
+            'title': 'Lezione cancellata',
+            'body':
+                'La lezione di $courseName ($label) è stata cancellata.',
+            'created_by': client.auth.currentUser?.id,
+          });
+        }
       }
       await client.from('lessons').delete().eq('id', lessonId);
       ref.invalidate(_staffLessonsForDayProvider);

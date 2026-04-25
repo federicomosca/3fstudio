@@ -10,8 +10,10 @@ bool hasValidPlanForCourse(
     final planCourseId = p['course_id'] as String?;
     if (planCourseId != null && planCourseId != courseId) continue;
     final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
-    if (type == 'unlimited') return true;
     final credits = p['credits_remaining'] as int?;
+    if (type == 'unlimited') return true;
+    if (type == 'trial' && credits == null) return true; // trial-by-time: unlimited within expiry
+    if (type == 'trial') continue; // trial-by-credits: use bookTrialLesson, not book
     if (credits != null && credits > 0) return true;
   }
   return false;
@@ -36,6 +38,13 @@ Map<String, dynamic>? selectBestCreditPlan(
     final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
     if (type != 'credits') continue;
     if (p['course_id'] != courseId) continue;
+    final credits = p['credits_remaining'] as int?;
+    if (credits != null && credits > 0) return p;
+  }
+  // Ultimo fallback: crediti prova (disdetta tardiva da piano trial)
+  for (final p in plans) {
+    final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
+    if (type != 'trial') continue;
     final credits = p['credits_remaining'] as int?;
     if (credits != null && credits > 0) return p;
   }

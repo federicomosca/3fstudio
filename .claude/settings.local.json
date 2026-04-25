@@ -35,7 +35,10 @@
       "Bash(gh pr create --title 'Pricing model: dynamic plan pricing linked to courses and formulas' --body ' *)",
       "Bash(grep -v \"Try \\\\`flutter\")",
       "Bash(grep -v \"Try \\\\`\")",
-      "Bash(xargs ls *)"
+      "Bash(xargs ls *)",
+      "Bash(xargs cat *)",
+      "Bash(grep -E \"^error|lib\\\\\\\\.+error\")",
+      "Bash(grep -E \"\\\\.dart$\")"
     ]
   }
 }

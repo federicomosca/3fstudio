@@ -208,14 +208,15 @@ class LessonCard extends StatelessWidget {
 
     if (isFull) {
       if (isOnWaitlist) {
-        return OutlinedButton(
+        return OutlinedButton.icon(
           onPressed: onLeaveWaitlist,
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.orange,
             side: BorderSide(color: Colors.orange.withAlpha(180)),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           ),
-          child: const Text('In lista', style: TextStyle(fontSize: 12)),
+          icon: const Icon(Icons.close, size: 13),
+          label: const Text('In lista', style: TextStyle(fontSize: 12)),
         );
       }
       return OutlinedButton(

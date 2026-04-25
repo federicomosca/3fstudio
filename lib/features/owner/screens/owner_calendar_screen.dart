@@ -2,14 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
-import '../../../features/calendar/providers/lessons_provider.dart';
+import '../../../core/providers/selected_studio_provider.dart';
 import '../providers/pending_lessons_count_provider.dart';
 import '../../../shared/widgets/recurring_section.dart';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+Future<void> _insertLessonCancelledNotif(
+    SupabaseClient client, String studioId, Map<String, dynamic> lesson) async {
+  final courses = lesson['courses'] as Map<String, dynamic>?;
+  final courseName = courses?['name'] as String? ?? 'Lezione';
+  final startsAt = DateTime.parse(lesson['starts_at'] as String).toLocal();
+  final label = DateFormat('d MMM, HH:mm', 'it').format(startsAt);
+  await client.from('notifications').insert({
+    'studio_id': studioId,
+    'title': 'Lezione cancellata',
+    'body': 'La lezione di $courseName ($label) è stata cancellata.',
+    'created_by': client.auth.currentUser?.id,
+  });
+}
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
@@ -25,10 +42,11 @@ final _ownerSelectedDayProvider =
 final _ownerLessonsForDayProvider =
     FutureProvider.family<List<Map<String, dynamic>>, DateTime>(
         (ref, date) async {
-  final studioId = ref.watch(currentStudioIdProvider);
-  if (studioId == null) return [];
+  final sedi = await ref.watch(userSediProvider.future);
+  if (sedi.isEmpty) return [];
 
   final client = ref.watch(supabaseClientProvider);
+  final allStudioIds = sedi.map((s) => s.id).toList();
   final start =
       DateTime(date.year, date.month, date.day).toUtc().toIso8601String();
   final end = DateTime(date.year, date.month, date.day + 1)
@@ -38,19 +56,45 @@ final _ownerLessonsForDayProvider =
   final data = await client
       .from('lessons')
       .select(
-          'id, starts_at, ends_at, capacity, status, '
-          'courses!inner(id, name, type), '
-          'users!trainer_id(full_name), '
-          'bookings(count), waitlist(count)')
+          'id, starts_at, ends_at, capacity, status, booked_count, waitlist_count, '
+          'courses!inner(id, name, type, studio_id, studios(name)), '
+          'users!trainer_id(full_name)')
       .gte('starts_at', start)
       .lt('starts_at', end)
-      .eq('courses.studio_id', studioId)
+      .inFilter('courses.studio_id', allStudioIds)
       .order('starts_at');
 
   return (data as List)
       .where((l) => l['courses'] != null)
       .cast<Map<String, dynamic>>()
       .toList();
+});
+
+// Giorni del mese con almeno una lezione — tutte le sedi dell'owner
+final _ownerLessonDaysProvider =
+    FutureProvider.autoDispose.family<Set<DateTime>, DateTime>((ref, month) async {
+  final sedi = await ref.watch(userSediProvider.future);
+  if (sedi.isEmpty) return {};
+
+  final client = ref.watch(supabaseClientProvider);
+  final allStudioIds = sedi.map((s) => s.id).toList();
+  final startOfMonth = DateTime(month.year, month.month, 1).toUtc();
+  final endOfMonth   = DateTime(month.year, month.month + 1, 1).toUtc();
+
+  final response = await client
+      .from('lessons')
+      .select('starts_at, courses!inner(studio_id)')
+      .gte('starts_at', startOfMonth.toIso8601String())
+      .lt('starts_at', endOfMonth.toIso8601String())
+      .inFilter('courses.studio_id', allStudioIds)
+      .eq('status', 'active');
+
+  return (response as List)
+      .where((json) => json['courses'] != null)
+      .map((json) {
+    final dt = DateTime.parse(json['starts_at'] as String).toLocal();
+    return DateTime(dt.year, dt.month, dt.day);
+  }).toSet();
 });
 
 
@@ -122,7 +166,9 @@ class _OwnerCalendarScreenState extends ConsumerState<OwnerCalendarScreen> {
     final selectedDay  = ref.watch(_ownerSelectedDayProvider);
     final lessons      = ref.watch(_ownerLessonsForDayProvider(selectedDay));
     final pendingCount = ref.watch(pendingLessonsCountProvider);
-    final lessonDays   = ref.watch(lessonDaysProvider(_focusedMonth));
+    final lessonDays   = ref.watch(_ownerLessonDaysProvider(_focusedMonth));
+    final sedi = ref.watch(userSediProvider).whenOrNull(data: (s) => s) ?? [];
+    final hasMulipleSedi = sedi.length > 1;
     final timeFmt = DateFormat('HH:mm');
     final dayFmt  = DateFormat('EEEE d MMMM', 'it_IT');
     final theme   = Theme.of(context);
@@ -198,7 +244,7 @@ class _OwnerCalendarScreenState extends ConsumerState<OwnerCalendarScreen> {
                 fontWeight: FontWeight.w800,
               ),
               selectedDecoration: BoxDecoration(
-                color: AppTheme.charcoal,
+                color: AppTheme.blue,
                 shape: BoxShape.circle,
               ),
               selectedTextStyle: TextStyle(
@@ -273,14 +319,8 @@ class _OwnerCalendarScreenState extends ConsumerState<OwnerCalendarScreen> {
                             l['courses'] as Map<String, dynamic>;
                         final trainer =
                             (l['users'] as Map<String, dynamic>?)?['full_name'] as String?;
-                        final bookings = l['bookings'] as List? ?? [];
-                        final count = bookings.isNotEmpty
-                            ? (bookings.first['count'] as int? ?? 0)
-                            : 0;
-                        final waitlist = l['waitlist'] as List? ?? [];
-                        final wCount = waitlist.isNotEmpty
-                            ? (waitlist.first['count'] as int? ?? 0)
-                            : 0;
+                        final count  = l['booked_count']   as int? ?? 0;
+                        final wCount = l['waitlist_count'] as int? ?? 0;
                         final cap = l['capacity'] as int? ?? 0;
                         final start = DateTime.parse(
                                 l['starts_at'] as String)
@@ -292,9 +332,24 @@ class _OwnerCalendarScreenState extends ConsumerState<OwnerCalendarScreen> {
                         final isPending = status == 'pending';
                         final isDeletePending = status == 'delete_pending';
 
+                        final studioId = course['studio_id'] as String?;
+                        final studioData = course['studios'] as Map<String, dynamic>?;
+                        final sedeName  = studioData?['name'] as String?;
+                        final sedeIdx   = studioId != null
+                            ? sedi.indexWhere((s) => s.id == studioId)
+                            : -1;
+                        final sedeCol = AppTheme.sedeColor(sedeIdx >= 0 ? sedeIdx : 0);
+
                         return Card(
+                          clipBehavior: Clip.hardEdge,
                           margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
+                          child: IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (hasMulipleSedi)
+                                  Container(width: 4, color: sedeCol),
+                                Expanded(child: ListTile(
                             leading: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -357,6 +412,7 @@ class _OwnerCalendarScreenState extends ConsumerState<OwnerCalendarScreen> {
                             ),
                             subtitle: Text([
                               ?trainer,
+                              ?(hasMulipleSedi ? sedeName : null),
                               wCount > 0
                                   ? '$count/$cap iscritti · $wCount in lista'
                                   : '$count/$cap iscritti',
@@ -431,8 +487,12 @@ class _OwnerCalendarScreenState extends ConsumerState<OwnerCalendarScreen> {
                                       ),
                                     ],
                                   ),
-                          ),
-                        );
+                          ),        // closes ListTile
+                            ),      // closes Expanded
+                          ],        // closes Row.children
+                        ),          // closes Row
+                      ),            // closes IntrinsicHeight
+                    );              // closes Card
                       },
                     ),
             ),
@@ -554,6 +614,10 @@ class _OwnerCalendarScreenState extends ConsumerState<OwnerCalendarScreen> {
     try {
       if (count > 0) {
         await client.from('bookings').delete().eq('lesson_id', lessonId);
+        final studioId = ref.read(currentStudioIdProvider);
+        if (studioId != null) {
+          await _insertLessonCancelledNotif(client, studioId, lesson);
+        }
       }
       await client.from('lessons').delete().eq('id', lessonId);
       ref.invalidate(_ownerLessonsForDayProvider);
@@ -632,6 +696,10 @@ class _OwnerCalendarScreenState extends ConsumerState<OwnerCalendarScreen> {
     try {
       if (count > 0) {
         await client.from('bookings').delete().eq('lesson_id', lessonId);
+        final studioId = ref.read(currentStudioIdProvider);
+        if (studioId != null) {
+          await _insertLessonCancelledNotif(client, studioId, lesson);
+        }
       }
       await client.from('lessons').delete().eq('id', lessonId);
       ref.invalidate(_ownerLessonsForDayProvider);
@@ -778,6 +846,14 @@ class PendingLessonsScreen extends ConsumerWidget {
           .eq('lesson_id', lessonId)
           .count();
       final count = result.count;
+      Map<String, dynamic>? lessonData;
+      if (count > 0) {
+        lessonData = await client
+            .from('lessons')
+            .select('starts_at, courses(name)')
+            .eq('id', lessonId)
+            .maybeSingle();
+      }
       if (!context.mounted) return;
       final confirm = await showDialog<bool>(
         context: context,
@@ -803,6 +879,10 @@ class PendingLessonsScreen extends ConsumerWidget {
       if (confirm != true) return;
       if (count > 0) {
         await client.from('bookings').delete().eq('lesson_id', lessonId);
+        final studioId = ref.read(currentStudioIdProvider);
+        if (studioId != null && lessonData != null) {
+          await _insertLessonCancelledNotif(client, studioId, lessonData);
+        }
       }
       await client.from('lessons').delete().eq('id', lessonId);
     } else {
@@ -1356,6 +1436,11 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
       setState(() => _error = 'Seleziona almeno un giorno della settimana');
       return;
     }
+    final now = DateTime.now();
+    if (!_isRecurring && !_startTime.isAfter(now)) {
+      setState(() => _error = "L'orario di inizio è nel passato");
+      return;
+    }
     final capacity = int.tryParse(_capCtrl.text.trim()) ?? 0;
     if (_maxCapacity != null && capacity > _maxCapacity!) {
       setState(() => _error = 'I posti non possono superare la capienza dello spazio ($_maxCapacity)');
@@ -1365,7 +1450,13 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
     try {
       final client = ref.read(supabaseClientProvider);
       final duration = _endTime.difference(_startTime);
-      final occurrences = _occurrences();
+      final occurrences = _isRecurring
+          ? _occurrences().where((d) => d.isAfter(now)).toList()
+          : _occurrences();
+      if (occurrences.isEmpty) {
+        setState(() => _error = 'Nessuna lezione futura da creare');
+        return;
+      }
 
       if (_roomId != null) {
         for (final start in occurrences) {

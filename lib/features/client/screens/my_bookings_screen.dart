@@ -38,6 +38,37 @@ final _myBookingsProvider = FutureProvider<List<Map<String, dynamic>>>((
     });
 });
 
+final _myWaitlistProvider = FutureProvider<List<Map<String, dynamic>>>((
+  ref,
+) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return [];
+
+  final client = ref.watch(supabaseClientProvider);
+  final data = await client
+      .from('waitlist')
+      .select(
+        'lesson_id, created_at, '
+        'lessons(starts_at, ends_at, courses(name, cancel_window_hours))',
+      )
+      .eq('user_id', user.id);
+
+  final now = DateTime.now();
+  return (data as List)
+      .where((w) {
+        final l = w['lessons'] as Map?;
+        if (l == null) return false;
+        return DateTime.parse(l['starts_at'] as String).isAfter(now);
+      })
+      .cast<Map<String, dynamic>>()
+      .toList()
+    ..sort((a, b) {
+      final da = DateTime.parse((a['lessons'] as Map)['starts_at'] as String);
+      final db = DateTime.parse((b['lessons'] as Map)['starts_at'] as String);
+      return da.compareTo(db);
+    });
+});
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class MyBookingsScreen extends ConsumerWidget {
@@ -45,73 +76,70 @@ class MyBookingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bookings = ref.watch(_myBookingsProvider);
+    final bookings  = ref.watch(_myBookingsProvider);
+    final waitlist  = ref.watch(_myWaitlistProvider);
     final planAsync = ref.watch(activePlanProvider);
     final isCredits =
         planAsync.whenOrNull(data: (p) => p?.planType == 'credits') ?? false;
 
+    final waitlistList = waitlist.whenOrNull(data: (l) => l) ?? [];
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Le mie prenotazioni'),
-      ),
+      appBar: AppBar(title: const Text('Le mie prenotazioni')),
       body: bookings.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
           child: Text('Errore: $e', style: const TextStyle(color: Colors.red)),
         ),
         data: (list) {
-          if (list.isEmpty) {
+          final now = DateTime.now();
+          final upcoming = list.where((b) {
+            final start = DateTime.parse(
+                (b['lessons'] as Map)['starts_at'] as String);
+            final status = b['status'] as String;
+            return start.isAfter(now) &&
+                (status == 'confirmed' || status == 'pending');
+          }).toList();
+          final past = list.where((b) {
+            if (upcoming.contains(b)) return false;
+            final start = DateTime.parse(
+                (b['lessons'] as Map)['starts_at'] as String);
+            return start.isBefore(now);
+          }).toList();
+
+          final isEmpty =
+              upcoming.isEmpty && past.isEmpty && waitlistList.isEmpty;
+
+          if (isEmpty) {
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.bookmark_outline,
-                    size: 56,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withAlpha(60),
-                  ),
+                  Icon(Icons.bookmark_outline,
+                      size: 56,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withAlpha(60)),
                   const SizedBox(height: 12),
-                  Text(
-                    'Nessuna prenotazione',
-                    style: TextStyle(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withAlpha(150),
-                    ),
-                  ),
+                  Text('Nessuna prenotazione',
+                      style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withAlpha(150))),
                   const SizedBox(height: 4),
-                  Text(
-                    'Vai al calendario per prenotare',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withAlpha(150),
-                    ),
-                  ),
+                  Text('Vai al calendario per prenotare',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withAlpha(150))),
                 ],
               ),
             );
           }
-
-          final now = DateTime.now();
-          final upcoming = list
-              .where(
-                (b) =>
-                    DateTime.parse(
-                      (b['lessons'] as Map)['starts_at'] as String,
-                    ).isAfter(now) &&
-                    b['status'] == 'confirmed',
-              )
-              .toList();
-          final past = list.where((b) {
-            if (upcoming.contains(b)) return false;
-            final lessonStart = DateTime.parse(
-                (b['lessons'] as Map)['starts_at'] as String);
-            return lessonStart.isBefore(now);
-          }).toList();
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -119,32 +147,145 @@ class MyBookingsScreen extends ConsumerWidget {
               if (upcoming.isNotEmpty) ...[
                 _SectionHeader(label: 'Prossime (${upcoming.length})'),
                 const SizedBox(height: 8),
-                ...upcoming.map(
-                  (b) => _BookingCard(
-                    booking: b,
-                    showCancelDeadline: isCredits,
-                    onCancelled: () => ref.invalidate(_myBookingsProvider),
-                  ),
-                ),
+                ...upcoming.map((b) => _BookingCard(
+                      booking: b,
+                      showCancelDeadline: isCredits,
+                      onCancelled: () => ref.invalidate(_myBookingsProvider),
+                    )),
+                const SizedBox(height: 20),
+              ],
+              if (waitlistList.isNotEmpty) ...[
+                _SectionHeader(
+                    label: 'Lista d\'attesa (${waitlistList.length})'),
+                const SizedBox(height: 8),
+                ...waitlistList.map((w) => _WaitlistCard(
+                      entry: w,
+                      onLeft: () {
+                        ref.invalidate(_myWaitlistProvider);
+                        ref.invalidate(userWaitlistProvider);
+                      },
+                    )),
                 const SizedBox(height: 20),
               ],
               if (past.isNotEmpty) ...[
                 _SectionHeader(label: 'Storico'),
                 const SizedBox(height: 8),
-                ...past.map(
-                  (b) => _BookingCard(
-                    booking: b,
-                    muted: true,
-                    showCancelDeadline: false,
-                    onCancelled: () => ref.invalidate(_myBookingsProvider),
-                  ),
-                ),
+                ...past.map((b) => _BookingCard(
+                      booking: b,
+                      muted: true,
+                      showCancelDeadline: false,
+                      onCancelled: () => ref.invalidate(_myBookingsProvider),
+                    )),
               ],
             ],
           );
         },
       ),
     );
+  }
+}
+
+// ── Waitlist card ─────────────────────────────────────────────────────────────
+
+class _WaitlistCard extends ConsumerWidget {
+  final Map<String, dynamic> entry;
+  final VoidCallback onLeft;
+  const _WaitlistCard({required this.entry, required this.onLeft});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lesson  = entry['lessons'] as Map<String, dynamic>;
+    final course  = lesson['courses'] as Map<String, dynamic>;
+    final start   = DateTime.parse(lesson['starts_at'] as String).toLocal();
+    final end     = DateTime.parse(lesson['ends_at'] as String).toLocal();
+    final lessonId = entry['lesson_id'] as String;
+    final dateFmt = DateFormat('EEE d MMM', 'it');
+    final timeFmt = DateFormat('HH:mm');
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: cs.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Container(
+              width: 4,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(course['name'] as String,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${dateFmt.format(start)}  '
+                    '${timeFmt.format(start)}–${timeFmt.format(end)}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: cs.onSurface.withAlpha(150)),
+                  ),
+                ],
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.schedule, size: 14, color: Colors.orange),
+                const SizedBox(width: 4),
+                Text('In attesa',
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.orange)),
+              ],
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.close, size: 18),
+              color: cs.error,
+              tooltip: 'Esci dalla lista',
+              onPressed: () => _leave(context, ref, lessonId),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _leave(
+      BuildContext context, WidgetRef ref, String lessonId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Esci dalla lista d\'attesa'),
+        content: const Text(
+            'Vuoi rimuoverti dalla lista d\'attesa per questa lezione?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('No')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Sì, esci',
+                  style: TextStyle(
+                      color: Theme.of(ctx).colorScheme.error))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await ref
+        .read(bookingNotifierProvider.notifier)
+        .leaveWaitlist(lessonId);
+    onLeft();
   }
 }
 

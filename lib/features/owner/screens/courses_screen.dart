@@ -5,17 +5,21 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
+import '../../../core/providers/selected_studio_provider.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
 final coursesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final studioId = ref.watch(currentStudioIdProvider);
-  if (studioId == null) return [];
+  final sedi = await ref.watch(userSediProvider.future);
+  if (sedi.isEmpty) return [];
+  final allStudioIds = sedi.map((s) => s.id).toList();
   final client = ref.watch(supabaseClientProvider);
   final data = await client
       .from('courses')
-      .select('id, name, type, cancel_window_hours, description, allows_group, allows_shared, allows_personal, users!class_owner_id(id, full_name)')
-      .eq('studio_id', studioId)
+      .select('id, name, type, studio_id, cancel_window_hours, description, '
+              'allows_group, allows_shared, allows_personal, '
+              'users!class_owner_id(id, full_name)')
+      .inFilter('studio_id', allStudioIds)
       .order('name');
   return (data as List).cast<Map<String, dynamic>>();
 });
@@ -52,6 +56,8 @@ class CoursesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final courses = ref.watch(coursesProvider);
+    final sedi    = ref.watch(userSediProvider).whenOrNull(data: (s) => s) ?? [];
+    final hasMulipleSedi = sedi.length > 1;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Corsi')),
@@ -65,43 +71,45 @@ class CoursesScreen extends ConsumerWidget {
         error:   (e, _) => Center(
             child: Text('Errore: $e',
                 style: const TextStyle(color: Colors.red))),
-        data: (list) => list.isEmpty
-            ? _EmptyCourses(onAdd: () => _showAddSheet(context, ref))
-            : ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: list.length,
-                separatorBuilder: (context, i) => const SizedBox(height: 8),
-                itemBuilder: (context, i) {
-                  final c     = list[i];
-                  final owner = c['users'] as Map<String, dynamic>?;
-                  final ag    = c['allows_group']    as bool? ?? true;
-                  final as_   = c['allows_shared']   as bool? ?? false;
-                  final ap    = c['allows_personal'] as bool? ?? false;
-                  final modes = [
-                    if (ag)  'Gruppo',
-                    if (as_) 'Condiviso',
-                    if (ap)  'Personal',
-                  ].join(' · ');
-                  final subtitle = owner != null
-                      ? '${owner['full_name']}  ·  $modes'
-                      : modes;
-                  return ListTile(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    tileColor: Theme.of(context).colorScheme.surface,
-                    leading: CircleAvatar(
-                      backgroundColor: AppTheme.blue.withAlpha(30),
-                      child: Icon(Icons.fitness_center_outlined,
-                          color: AppTheme.blue),
-                    ),
-                    title: Text(c['name'] as String,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(subtitle),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => context.push('/owner/courses/${c['id']}'),
-                  );
-                },
-              ),
+        data: (list) {
+          if (list.isEmpty) return _EmptyCourses(onAdd: () => _showAddSheet(context, ref));
+
+          // Raggruppa per sede nell'ordine di userSediProvider
+          final items = <Widget>[];
+          final sedeOrder = sedi.map((s) => s.id).toList();
+          // Courses not matched by any known sede (edge case)
+          final otherIds = list.map((c) => c['studio_id'] as String?).whereType<String>().toSet()
+              ..removeAll(sedeOrder);
+
+          for (var si = 0; si < sedeOrder.length; si++) {
+            final sedeId      = sedeOrder[si];
+            final sedeCourses = list.where((c) => c['studio_id'] == sedeId).toList();
+            if (sedeCourses.isEmpty) continue;
+
+            if (hasMulipleSedi) {
+              final sedeName = sedi[si].name;
+              final color    = AppTheme.sedeColor(si);
+              items.add(_SedeSectionHeader(name: sedeName, color: color));
+            }
+            for (final c in sedeCourses) {
+              items.add(_CourseTile(c: c, onTap: () => context.push('/owner/courses/${c['id']}')));
+            }
+            if (hasMulipleSedi) items.add(const SizedBox(height: 8));
+          }
+
+          // Edge case: corsi di sedi non nel provider (es. accesso admin)
+          final orphans = list.where((c) => otherIds.contains(c['studio_id'])).toList();
+          if (orphans.isNotEmpty) {
+            for (final c in orphans) {
+              items.add(_CourseTile(c: c, onTap: () => context.push('/owner/courses/${c['id']}')));
+            }
+          }
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            children: items,
+          );
+        },
       ),
     );
   }
@@ -116,6 +124,77 @@ class CoursesScreen extends ConsumerWidget {
       ),
       builder: (_) => _AddCourseSheet(
         onCreated: () => ref.invalidate(coursesProvider),
+      ),
+    );
+  }
+}
+
+// ── Sede section header ───────────────────────────────────────────────────────
+
+class _SedeSectionHeader extends StatelessWidget {
+  final String name;
+  final Color color;
+  const _SedeSectionHeader({required this.name, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(children: [
+        Container(
+          width: 12, height: 12,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          name,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: color,
+            letterSpacing: 0.4,
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── Course tile ───────────────────────────────────────────────────────────────
+
+class _CourseTile extends StatelessWidget {
+  final Map<String, dynamic> c;
+  final VoidCallback onTap;
+  const _CourseTile({required this.c, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final owner = c['users'] as Map<String, dynamic>?;
+    final ag    = c['allows_group']    as bool? ?? true;
+    final as_   = c['allows_shared']   as bool? ?? false;
+    final ap    = c['allows_personal'] as bool? ?? false;
+    final modes = [
+      if (ag)  'Gruppo',
+      if (as_) 'Condiviso',
+      if (ap)  'Personal',
+    ].join(' · ');
+    final subtitle = owner != null
+        ? '${owner['full_name']}  ·  $modes'
+        : modes;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        tileColor: Theme.of(context).colorScheme.surface,
+        leading: CircleAvatar(
+          backgroundColor: AppTheme.blue.withAlpha(30),
+          child: Icon(Icons.fitness_center_outlined, color: AppTheme.blue),
+        ),
+        title: Text(c['name'] as String,
+            style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
       ),
     );
   }

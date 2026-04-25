@@ -77,7 +77,7 @@ final userPendingTrialLessonsProvider = FutureProvider.autoDispose<Set<String>>(
       .toSet();
 });
 
-/// True se l'utente ha almeno un piano credits/unlimited attivo (non trial).
+/// True se l'utente ha almeno un piano credits/unlimited attivo, o trial-by-time.
 final hasActivePlanProvider = FutureProvider.autoDispose<bool>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return false;
@@ -93,10 +93,33 @@ final hasActivePlanProvider = FutureProvider.autoDispose<bool>((ref) async {
 
   return (plans as List).cast<Map<String, dynamic>>().any((p) {
     final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
-    if (type == 'trial') return false;
     if (type == 'unlimited') return true;
+    if (type == 'trial') {
+      // trial-by-time (nessun credito): vale come unlimited entro la scadenza
+      return p['credits_remaining'] == null;
+    }
     final credits = p['credits_remaining'] as int?;
     return credits != null && credits > 0;
+  });
+});
+
+/// True se l'utente ha un piano trial-by-time attivo (unlimited entro scadenza).
+final hasTrialTimePlanProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return false;
+
+  final client = ref.watch(supabaseClientProvider);
+  final now = DateTime.now().toUtc().toIso8601String();
+
+  final plans = await client
+      .from('user_plans')
+      .select('credits_remaining, plans!inner(type)')
+      .eq('user_id', user.id)
+      .or('expires_at.is.null,expires_at.gte.$now');
+
+  return (plans as List).cast<Map<String, dynamic>>().any((p) {
+    final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
+    return type == 'trial' && p['credits_remaining'] == null;
   });
 });
 
@@ -170,7 +193,8 @@ class BookingNotifier extends AsyncNotifier<void> {
     ref.invalidate(lessonsForDayProvider);
   }
 
-  /// Richiede una lezione di prova consumando 1 credito dal piano trial attivo.
+  /// Richiede una lezione di prova (piano trial-by-credits).
+  /// Il credito viene scalato alla presenza o alla disdetta tardiva, non qui.
   Future<void> bookTrialLesson(String lessonId) async {
     final user = ref.read(currentUserProvider);
     if (user == null) throw Exception('Utente non autenticato');
@@ -195,11 +219,8 @@ class BookingNotifier extends AsyncNotifier<void> {
 
     await ds.upsertBooking(
         userId: user.id, lessonId: lessonId, status: 'pending', isTrial: true);
-    await ds.deductCredit(
-        trialPlan['id'] as String, trialPlan['credits_remaining'] as int);
 
     ref.invalidate(userPendingTrialLessonsProvider);
-    ref.invalidate(hasTrialCreditsProvider);
   }
 
   Future<void> cancel(String lessonId) async {
@@ -217,19 +238,33 @@ class BookingNotifier extends AsyncNotifier<void> {
     ref.invalidate(userWaitlistProvider);
   }
 
+  /// Cancella una richiesta di prova entro la finestra gratuita (nessun addebito).
   Future<void> cancelTrialRequest(String lessonId) async {
     final user = ref.read(currentUserProvider);
     if (user == null) throw Exception('Utente non autenticato');
 
     final ds = ref.read(bookingDataSourceProvider);
+    await ds.updateBookingStatus(
+        userId: user.id, lessonId: lessonId, status: 'cancelled');
 
-    // Rimborsa il credito prova al piano trial attivo
+    ref.invalidate(userPendingTrialLessonsProvider);
+    ref.invalidate(lessonsForDayProvider);
+  }
+
+  /// Cancella una richiesta di prova dopo la finestra gratuita: scala 1 credito prova.
+  Future<void> cancelTrialWithDeduction(String lessonId) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) throw Exception('Utente non autenticato');
+
+    final ds = ref.read(bookingDataSourceProvider);
     final plans = await ds.getActivePlans(user.id);
+
     final trialPlan = plans.cast<Map<String, dynamic>?>().firstWhere(
       (p) {
         final type =
             (p!['plans'] as Map<String, dynamic>)['type'] as String;
-        return type == 'trial';
+        final credits = p['credits_remaining'] as int?;
+        return type == 'trial' && credits != null && credits > 0;
       },
       orElse: () => null,
     );
@@ -238,7 +273,7 @@ class BookingNotifier extends AsyncNotifier<void> {
         userId: user.id, lessonId: lessonId, status: 'cancelled');
 
     if (trialPlan != null) {
-      await ds.refundCredit(
+      await ds.deductCredit(
           trialPlan['id'] as String, trialPlan['credits_remaining'] as int);
     }
 

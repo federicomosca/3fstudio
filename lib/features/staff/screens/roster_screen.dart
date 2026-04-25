@@ -32,6 +32,19 @@ final _rosterProvider =
   return (data as List).cast<Map<String, dynamic>>();
 });
 
+// waitlist entries with user data
+final _waitlistRosterProvider =
+    FutureProvider.family<List<Map<String, dynamic>>, String>(
+        (ref, lessonId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final data   = await client
+      .from('waitlist')
+      .select('id, user_id, position, created_at, users(id, full_name, avatar_url)')
+      .eq('lesson_id', lessonId)
+      .order('created_at');
+  return (data as List).cast<Map<String, dynamic>>();
+});
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class RosterScreen extends ConsumerWidget {
@@ -40,8 +53,9 @@ class RosterScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lessonAsync = ref.watch(_lessonInfoProvider(lessonId));
-    final rosterAsync = ref.watch(_rosterProvider(lessonId));
+    final lessonAsync   = ref.watch(_lessonInfoProvider(lessonId));
+    final rosterAsync   = ref.watch(_rosterProvider(lessonId));
+    final waitlistAsync = ref.watch(_waitlistRosterProvider(lessonId));
 
     final timeFmt = DateFormat('HH:mm');
     final dateFmt = DateFormat('EEEE d MMMM', 'it_IT');
@@ -128,41 +142,71 @@ class RosterScreen extends ConsumerWidget {
               error: (e, _) => Center(
                   child: Text('Errore: $e',
                       style: const TextStyle(color: Colors.red))),
-              data: (roster) => roster.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.person_off_outlined,
-                              size: 56,
-                              color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
-                          const SizedBox(height: 12),
-                          Text('Nessun iscritto a questa lezione',
-                              style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
-                        ],
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: roster.length,
-                      separatorBuilder: (context, i) =>
-                          const SizedBox(height: 8),
-                      itemBuilder: (context, i) {
-                        final lesson = lessonAsync.asData?.value;
-                        final endsAt = lesson != null
-                            ? DateTime.parse(lesson['ends_at'] as String).toLocal()
-                            : DateTime.now();
-                        return _AttendeeRow(
-                          booking: roster[i],
-                          canMark: DateTime.now().isAfter(endsAt),
-                          onStatusChange: (newStatus) async {
-                            await _updateStatus(
-                                context, ref, roster[i], newStatus);
-                          },
-                        );
-                      },
+              data: (roster) {
+                final waitlist = waitlistAsync.whenOrNull(data: (w) => w) ?? [];
+                if (roster.isEmpty && waitlist.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.person_off_outlined,
+                            size: 56,
+                            color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
+                        const SizedBox(height: 12),
+                        Text('Nessun iscritto a questa lezione',
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
+                      ],
                     ),
+                  );
+                }
+                final lesson = lessonAsync.asData?.value;
+                final endsAt = lesson != null
+                    ? DateTime.parse(lesson['ends_at'] as String).toLocal()
+                    : DateTime.now();
+                final canMark = DateTime.now().isAfter(endsAt);
+                // Build flat item list: bookings + optional waitlist section
+                final items = <_RosterItem>[
+                  for (final b in roster) _RosterItem.booking(b),
+                  if (waitlist.isNotEmpty) ...[
+                    _RosterItem.waitlistHeader(),
+                    for (final w in waitlist) _RosterItem.waitlist(w),
+                  ],
+                ];
+                return ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: items.length,
+                  separatorBuilder: (context, i) =>
+                      items[i].isHeader ? const SizedBox(height: 4) : const SizedBox(height: 8),
+                  itemBuilder: (context, i) {
+                    final item = items[i];
+                    if (item.isHeader) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 4),
+                        child: Text(
+                          'Lista d\'attesa (${waitlist.length})',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      );
+                    }
+                    if (item.waitlistEntry != null) {
+                      return _WaitlistRow(entry: item.waitlistEntry!);
+                    }
+                    return _AttendeeRow(
+                      booking: item.booking!,
+                      canMark: canMark,
+                      onStatusChange: (newStatus) async {
+                        await _updateStatus(context, ref, item.booking!, newStatus);
+                      },
+                    );
+                  },
+                );
+              },
             ),
           ),
         ],
@@ -246,6 +290,15 @@ class RosterScreen extends ConsumerWidget {
         if (credits != null && credits > 0) { bestPlan = p; break; }
       }
     }
+    // Fall back to trial credits (trial-by-credits: credito scalato alla presenza)
+    if (bestPlan == null) {
+      for (final p in plans) {
+        final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
+        if (type != 'trial') continue;
+        final credits = p['credits_remaining'] as int?;
+        if (credits != null && credits > 0) { bestPlan = p; break; }
+      }
+    }
 
     if (bestPlan != null) {
       final credits = bestPlan['credits_remaining'] as int;
@@ -254,6 +307,71 @@ class RosterScreen extends ConsumerWidget {
           .update({'credits_remaining': credits - 1})
           .eq('id', bestPlan['id'] as String);
     }
+  }
+}
+
+// ── Item type helper ─────────────────────────────────────────────────────────
+
+class _RosterItem {
+  final Map<String, dynamic>? booking;
+  final Map<String, dynamic>? waitlistEntry;
+  final bool isHeader;
+
+  const _RosterItem._({this.booking, this.waitlistEntry, this.isHeader = false});
+
+  factory _RosterItem.booking(Map<String, dynamic> b) => _RosterItem._(booking: b);
+  factory _RosterItem.waitlist(Map<String, dynamic> w) => _RosterItem._(waitlistEntry: w);
+  factory _RosterItem.waitlistHeader() => _RosterItem._(isHeader: true);
+}
+
+// ── Waitlist row ──────────────────────────────────────────────────────────────
+
+class _WaitlistRow extends StatelessWidget {
+  final Map<String, dynamic> entry;
+  const _WaitlistRow({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = entry['users'] as Map<String, dynamic>? ?? {};
+    final name = user['full_name'] as String? ?? '—';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.orange.withAlpha(15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withAlpha(80)),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        leading: CircleAvatar(
+          backgroundColor: Colors.orange.withAlpha(40),
+          child: Text(
+            name.isNotEmpty ? name[0].toUpperCase() : '?',
+            style: const TextStyle(
+              color: Color(0xFFFFB74D),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.hourglass_empty_outlined,
+                size: 13, color: Color(0xFFFFB74D)),
+            const SizedBox(width: 4),
+            const Text(
+              'In lista d\'attesa',
+              style: TextStyle(
+                color: Color(0xFFFFB74D),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

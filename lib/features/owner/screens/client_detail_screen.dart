@@ -693,54 +693,70 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
     List<Map<String, dynamic>> courses,
     Map<String, dynamic>? pricing,
   ) async {
-    if (_selectedPlanId == null || _courseId == null) return;
+    if (_selectedPlanId == null) return;
 
     final plan = plans.firstWhere((p) => p['id'] == _selectedPlanId,
         orElse: () => {});
     if (plan.isEmpty) return;
 
-    final selectedCourse =
-        courses.where((c) => c['id'] == _courseId).firstOrNull;
-    if (selectedCourse == null) return;
-
-    final rate = pricing != null
-        ? calcCourseRate(selectedCourse, pricing, formulaOverride: _formula)
-        : null;
-
-    final discountPct  = double.tryParse(_discountCtrl.text.trim()) ?? 0.0;
-    final discountMult = 1 - discountPct / 100;
-
     final planType = plan['type'] as String? ?? 'credits';
     final credits  = plan['credits'] as int?;
     final duration = plan['duration_days'] as int?;
+    final isTrial  = planType == 'trial';
 
-    double? basePrice;
-    if (rate != null) {
-      if (planType == 'unlimited' && duration != null) {
-        basePrice = rate * _effectiveSessions * (duration / 7);
-      } else if (credits != null) {
-        basePrice = rate * credits;
-      }
-    }
-    final pricePaid = basePrice != null ? basePrice * discountMult : null;
+    if (!isTrial && _courseId == null) return;
 
     setState(() => _saving = true);
     try {
       final db  = ref.read(supabaseClientProvider);
       final now = DateTime.now().toUtc();
+      final expiresAt = duration != null
+          ? now.add(Duration(days: duration)).toIso8601String()
+          : null;
 
-      await db.from('user_plans').insert({
-        'user_id':           widget.userId,
-        'plan_id':           _selectedPlanId,
-        'course_id':         _courseId,
-        'credits_remaining': planType == 'credits' ? credits : null,
-        'expires_at':        duration != null
-            ? now.add(Duration(days: duration)).toIso8601String()
-            : null,
-        'formula':           _formula,
-        'rate_snapshot':     rate,
-        'price_paid':        pricePaid,
-      });
+      if (isTrial) {
+        // Trial plans are never course-specific.
+        // credits == null → trial-by-time (unlimited within expiry)
+        // credits > 0    → trial-by-credits (1 credit per lesson attended)
+        await db.from('user_plans').insert({
+          'user_id':           widget.userId,
+          'plan_id':           _selectedPlanId,
+          'course_id':         null,
+          'credits_remaining': credits,
+          'expires_at':        expiresAt,
+        });
+      } else {
+        final selectedCourse =
+            courses.where((c) => c['id'] == _courseId).firstOrNull;
+        if (selectedCourse == null) return;
+
+        final rate = pricing != null
+            ? calcCourseRate(selectedCourse, pricing, formulaOverride: _formula)
+            : null;
+        final discountPct  = double.tryParse(_discountCtrl.text.trim()) ?? 0.0;
+        final discountMult = 1 - discountPct / 100;
+
+        double? basePrice;
+        if (rate != null) {
+          if (planType == 'unlimited' && duration != null) {
+            basePrice = rate * _effectiveSessions * (duration / 7);
+          } else if (credits != null) {
+            basePrice = rate * credits;
+          }
+        }
+        final pricePaid = basePrice != null ? basePrice * discountMult : null;
+
+        await db.from('user_plans').insert({
+          'user_id':           widget.userId,
+          'plan_id':           _selectedPlanId,
+          'course_id':         _courseId,
+          'credits_remaining': planType == 'credits' ? credits : null,
+          'expires_at':        expiresAt,
+          'formula':           _formula,
+          'rate_snapshot':     rate,
+          'price_paid':        pricePaid,
+        });
+      }
 
       ref.invalidate(_clientDetailProvider(widget.userId));
       if (mounted) Navigator.pop(context);
@@ -797,7 +813,14 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Text('Errore: $e', style: TextStyle(color: cs.error)),
               data: (courses) {
-                final selectedCourse = _courseId != null
+                final selectedPlan = _selectedPlanId != null
+                    ? plans.where((p) => p['id'] == _selectedPlanId).firstOrNull
+                    : null;
+                final credits  = selectedPlan?['credits'] as int?;
+                final planType = selectedPlan?['type'] as String? ?? '';
+                final isTrial  = planType == 'trial';
+
+                final selectedCourse = !isTrial && _courseId != null
                     ? courses.where((c) => c['id'] == _courseId).firstOrNull
                     : null;
 
@@ -805,12 +828,6 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                     ? calcCourseRate(selectedCourse, pricing,
                         formulaOverride: _formula)
                     : null;
-
-                final selectedPlan = _selectedPlanId != null
-                    ? plans.where((p) => p['id'] == _selectedPlanId).firstOrNull
-                    : null;
-                final credits  = selectedPlan?['credits'] as int?;
-                final planType = selectedPlan?['type'] as String? ?? '';
 
                 final ag  = selectedCourse?['allows_group']    as bool? ?? true;
                 final as_ = selectedCourse?['allows_shared']   as bool? ?? false;
@@ -822,27 +839,95 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                 final discountPct =
                     double.tryParse(_discountCtrl.text.trim()) ?? 0.0;
 
-                final canSave =
-                    _selectedPlanId != null && _courseId != null && !_saving;
+                final canSave = _selectedPlanId != null &&
+                    (isTrial || _courseId != null) &&
+                    !_saving;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // ── Course picker ─────────────────────────────────
+                    // ── Plan picker (PRIMO) ───────────────────────────
                     DropdownButtonFormField<String>(
-                      initialValue: _courseId,
-                      decoration: const InputDecoration(labelText: 'Corso'),
-                      items: courses.map((c) => DropdownMenuItem(
-                        value: c['id'] as String,
-                        child: Text(c['name'] as String),
-                      )).toList(),
-                      onChanged: (v) =>
-                          _onCourseChanged(v, courses, activePlans, pricing),
+                      initialValue: _selectedPlanId,
+                      decoration: const InputDecoration(labelText: 'Piano'),
+                      items: plans.map((p) {
+                        final type  = p['type'] as String? ?? '';
+                        final creds = p['credits'] as int?;
+                        final days  = p['duration_days'] as int?;
+                        final typeLabel = switch (type) {
+                          'unlimited' => 'Illimitato',
+                          'trial' => creds != null
+                              ? 'Prova · $creds lezioni'
+                              : 'Prova a tempo',
+                          _ => creds != null ? '$creds lezioni' : 'Crediti',
+                        };
+                        final daysLabel = days != null ? ' · $days gg' : '';
+                        return DropdownMenuItem(
+                          value: p['id'] as String,
+                          child: Text('${p['name']}  ·  $typeLabel$daysLabel'),
+                        );
+                      }).toList(),
+                      onChanged: (v) {
+                        final p = v != null
+                            ? plans.where((p) => p['id'] == v).firstOrNull
+                            : null;
+                        final newIsTrial = p?['type'] == 'trial';
+                        setState(() {
+                          _selectedPlanId = v;
+                          if (newIsTrial) _courseId = null;
+                        });
+                      },
                     ),
 
-                    // ── Formula ───────────────────────────────────────
-                    if (selectedCourse != null) ...[
+                    // ── Trial info badge ──────────────────────────────
+                    if (isTrial) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cyan.withAlpha(25),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.cyan.withAlpha(80)),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.info_outline,
+                              color: AppTheme.cyan, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              credits != null
+                                  ? 'Piano di prova a crediti: il cliente '
+                                    'potrà richiedere fino a $credits lezioni '
+                                    'di prova su qualsiasi corso.'
+                                  : 'Piano di prova a tempo: il cliente '
+                                    'potrà prenotare qualsiasi lezione per '
+                                    'tutta la durata del piano.',
+                              style: const TextStyle(
+                                  fontSize: 12, color: AppTheme.cyan),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ],
+
+                    // ── Course picker (solo per piani non-trial) ──────
+                    if (!isTrial) ...[
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<String>(
+                        initialValue: _courseId,
+                        decoration: const InputDecoration(labelText: 'Corso'),
+                        items: courses.map((c) => DropdownMenuItem(
+                          value: c['id'] as String,
+                          child: Text(c['name'] as String),
+                        )).toList(),
+                        onChanged: (v) =>
+                            _onCourseChanged(v, courses, activePlans, pricing),
+                      ),
+                    ],
+
+                    // ── Formula (solo se corso selezionato) ───────────
+                    if (!isTrial && selectedCourse != null) ...[
                       const SizedBox(height: 14),
                       Text('Modalità',
                           style: TextStyle(
@@ -883,33 +968,9 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                       ]),
                     ],
 
-                    const SizedBox(height: 14),
-
-                    // ── Plan picker ───────────────────────────────────
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedPlanId,
-                      decoration: const InputDecoration(labelText: 'Piano'),
-                      items: plans.map((p) {
-                        final type  = p['type'] as String? ?? '';
-                        final creds = p['credits'] as int?;
-                        final days  = p['duration_days'] as int?;
-                        final typeLabel = switch (type) {
-                          'unlimited' => 'Illimitato',
-                          'trial'     => 'Prova',
-                          _ => creds != null ? '$creds lezioni' : 'Crediti',
-                        };
-                        final daysLabel = days != null ? ' · $days gg' : '';
-                        return DropdownMenuItem(
-                          value: p['id'] as String,
-                          child: Text('${p['name']}  ·  $typeLabel$daysLabel'),
-                        );
-                      }).toList(),
-                      onChanged: (v) =>
-                          setState(() => _selectedPlanId = v),
-                    ),
-
-                    // ── Frequency (unlimited with duration) ───────────
-                    if (planType == 'unlimited' && selectedPlan != null &&
+                    // ── Frequency (unlimited con durata) ──────────────
+                    if (!isTrial && planType == 'unlimited' &&
+                        selectedPlan != null &&
                         (selectedPlan['duration_days'] as int?) != null) ...[
                       const SizedBox(height: 14),
                       Text('Frequenza stimata',
@@ -950,44 +1011,44 @@ class _AssignPlanSheetState extends ConsumerState<_AssignPlanSheet> {
                       ]),
                     ],
 
-                    // ── Discount ──────────────────────────────────────
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _discountCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
-                      decoration: InputDecoration(
-                        labelText: 'Sconto applicato (%)',
-                        prefixIcon: const Icon(Icons.discount_outlined),
-                        suffixText: '-%',
-                        helperText: activePlans.any((p) =>
-                                p['course_id'] != null &&
-                                p['course_id'] != _courseId) &&
-                            pricing != null
-                            ? 'Sconto studio 2° corso: '
-                              '${(pricing['second_course_discount_pct'] as num?)?.toStringAsFixed(0) ?? '0'}%'
-                            : null,
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-
-                    // ── Price preview ─────────────────────────────────
-                    if (selectedPlan != null && _courseId != null) ...[
+                    // ── Discount + Price preview (solo non-trial) ─────
+                    if (!isTrial) ...[
                       const SizedBox(height: 14),
-                      _PricePreview(
-                        rate: rate,
-                        credits: planType == 'credits' ? credits : null,
-                        courseName: selectedCourse?['name'] as String?,
-                        formula: _formula,
-                        hasHourlyRate: hasHourlyRate,
-                        sessionsPerWeek: planType == 'unlimited'
-                            ? _effectiveSessions
-                            : null,
-                        durationDays: planType == 'unlimited'
-                            ? (selectedPlan['duration_days'] as int?)
-                            : null,
-                        discountPct: discountPct,
+                      TextField(
+                        controller: _discountCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: InputDecoration(
+                          labelText: 'Sconto applicato (%)',
+                          prefixIcon: const Icon(Icons.discount_outlined),
+                          suffixText: '-%',
+                          helperText: activePlans.any((p) =>
+                                  p['course_id'] != null &&
+                                  p['course_id'] != _courseId) &&
+                              pricing != null
+                              ? 'Sconto studio 2° corso: '
+                                '${(pricing['second_course_discount_pct'] as num?)?.toStringAsFixed(0) ?? '0'}%'
+                              : null,
+                        ),
+                        onChanged: (_) => setState(() {}),
                       ),
+                      if (selectedPlan != null && _courseId != null) ...[
+                        const SizedBox(height: 14),
+                        _PricePreview(
+                          rate: rate,
+                          credits: planType == 'credits' ? credits : null,
+                          courseName: selectedCourse?['name'] as String?,
+                          formula: _formula,
+                          hasHourlyRate: hasHourlyRate,
+                          sessionsPerWeek: planType == 'unlimited'
+                              ? _effectiveSessions
+                              : null,
+                          durationDays: planType == 'unlimited'
+                              ? (selectedPlan['duration_days'] as int?)
+                              : null,
+                          discountPct: discountPct,
+                        ),
+                      ],
                     ],
 
                     const SizedBox(height: 24),

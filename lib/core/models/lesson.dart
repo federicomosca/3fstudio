@@ -26,15 +26,8 @@ class Lesson {
   });
 
   factory Lesson.fromJson(Map<String, dynamic> json) {
-    final course    = json['courses'] as Map<String, dynamic>;
-    final trainer   = json['users'] as Map<String, dynamic>?;   // lesson-level trainer
-    final bookings  = (json['bookings'] as List?)?.cast<Map<String, dynamic>>();
-    final waitlist  = json['waitlist'] as List?;
-    final count     = bookings == null ? 0
-        : bookings.where((b) => b['status'] != 'cancelled').length;
-    final wCount    = waitlist != null && waitlist.isNotEmpty
-        ? (waitlist.first['count'] as int? ?? 0)
-        : 0;
+    final course   = json['courses'] as Map<String, dynamic>;
+    final trainer  = json['users'] as Map<String, dynamic>?;
     return Lesson(
       id:                 json['id'] as String,
       courseId:           json['course_id'] as String,
@@ -44,8 +37,8 @@ class Lesson {
       startTime:          DateTime.parse(json['starts_at'] as String).toLocal(),
       endTime:            DateTime.parse(json['ends_at'] as String).toLocal(),
       capacity:           json['capacity'] as int,
-      bookedCount:        count,
-      waitlistCount:      wCount,
+      bookedCount:        json['booked_count'] as int? ?? 0,
+      waitlistCount:      json['waitlist_count'] as int? ?? 0,
       cancellationHours:  course['cancel_window_hours'] as int? ?? 0,
     );
   }

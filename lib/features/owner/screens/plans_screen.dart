@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/models/studio.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
+import '../../../core/providers/selected_studio_provider.dart';
 import '../providers/plan_requests_provider.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
@@ -51,6 +53,9 @@ class PlansScreen extends ConsumerWidget {
     final plans    = ref.watch(_plansProvider);
     final requests = ref.watch(_pendingRequestsProvider);
     final cs       = Theme.of(context).colorScheme;
+    final currentStudioId = ref.watch(currentStudioIdProvider);
+    final allStudios = ref.watch(userSediProvider).whenOrNull(data: (s) => s) ?? [];
+    final otherStudios = allStudios.where((s) => s.id != currentStudioId).toList();
 
     return Scaffold(
       appBar: hideAppBar ? null : AppBar(title: const Text('Piani & abbonamenti')),
@@ -94,11 +99,27 @@ class PlansScreen extends ConsumerWidget {
             ) ?? const SizedBox.shrink(),
 
             // ── Lista piani ───────────────────────────────────────────────
+            Row(
+              children: [
+                Expanded(child: _SectionLabel('Piani disponibili')),
+                if (otherStudios.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => _showCopyFromStudioDialog(
+                        context, ref, otherStudios, currentStudioId),
+                    icon: const Icon(Icons.copy_all, size: 16),
+                    label: const Text('Copia da sede'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
             if (list.isEmpty)
               _emptyState(cs)
             else ...[
-              _SectionLabel('Piani disponibili'),
-              const SizedBox(height: 8),
               ...list.asMap().entries.map((e) => Padding(
                     padding: EdgeInsets.only(
                         bottom: e.key < list.length - 1 ? 10 : 0),
@@ -310,6 +331,113 @@ class PlansScreen extends ConsumerWidget {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Errore: $e')),
         );
+      }
+    }
+  }
+
+  void _showCopyFromStudioDialog(
+    BuildContext context,
+    WidgetRef ref,
+    List<Studio> otherStudios,
+    String? currentStudioId,
+  ) {
+    Studio? selected = otherStudios.length == 1 ? otherStudios.first : null;
+    bool copying = false;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Copia piani da sede'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Seleziona la sede da cui copiare i piani. '
+                'I piani verranno aggiunti a quelli esistenti.',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<Studio>(
+                initialValue: selected,
+                decoration: const InputDecoration(
+                  labelText: 'Sede sorgente',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                items: otherStudios
+                    .map((s) => DropdownMenuItem(
+                          value: s,
+                          child: Text(s.name),
+                        ))
+                    .toList(),
+                onChanged: copying
+                    ? null
+                    : (v) => setState(() => selected = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: copying ? null : () => Navigator.pop(ctx),
+              child: const Text('Annulla'),
+            ),
+            FilledButton(
+              onPressed: (selected == null || copying || currentStudioId == null)
+                  ? null
+                  : () async {
+                      setState(() => copying = true);
+                      await _copyPlansFromStudio(
+                          context, ref, selected!.id, currentStudioId);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    },
+              child: copying
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Copia'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _copyPlansFromStudio(
+    BuildContext context,
+    WidgetRef ref,
+    String sourceStudioId,
+    String targetStudioId,
+  ) async {
+    try {
+      final client = ref.read(supabaseClientProvider);
+      final sourcePlans = await client
+          .from('plans')
+          .select('name, type, credits, duration_days')
+          .eq('studio_id', sourceStudioId);
+
+      for (final p in (sourcePlans as List)) {
+        final plan = Map<String, dynamic>.from(p as Map<String, dynamic>);
+        plan['studio_id'] = targetStudioId;
+        await client.from('plans').insert(plan);
+      }
+
+      ref.invalidate(_plansProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content:
+                  Text('${sourcePlans.length} piani copiati con successo')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Errore: $e')));
       }
     }
   }
