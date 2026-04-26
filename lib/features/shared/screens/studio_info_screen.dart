@@ -3,30 +3,44 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/models/course_type.dart';
+import '../../../core/models/studio.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/providers/selected_studio_provider.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../features/profile/screens/profile_screen.dart';
 
-// ── Providers (visione globale — non filtrata per sede selezionata) ───────────
+// ── Providers (visione org-wide) ──────────────────────────────────────────────
 
-/// Tutte le sedi accessibili dall'utente corrente
-final _studioSediProvider = userSediProvider;
+/// Tutte le sedi dell'organizzazione visibili all'utente corrente.
+/// La RLS (my_org_studio_ids) gestisce il filtro — non serve passare
+/// per organization_name in Dart.
+final _orgSediProvider = FutureProvider<List<Studio>>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return [];
 
-/// Tutti i membri del team su tutte le sedi dell'utente
+  final client = ref.watch(supabaseClientProvider);
+
+  final data = await client
+      .from('studios')
+      .select('id, name, address, organization_name')
+      .order('name');
+
+  return (data as List).map((s) => Studio.fromJson(s)).toList();
+});
+
+/// Tutti i membri del team su tutte le sedi dell'org
 final _allTeamProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final sedi = await ref.watch(userSediProvider.future);
+  final sedi = await ref.watch(_orgSediProvider.future);
   if (sedi.isEmpty) return [];
 
-  final client   = ref.watch(supabaseClientProvider);
+  final client    = ref.watch(supabaseClientProvider);
   final studioIds = sedi.map((s) => s.id).toList();
 
   final data = await client
       .from('user_studio_roles')
       .select('role, users(id, full_name, bio, avatar_url, specializations)')
       .inFilter('studio_id', studioIds)
-      .inFilter('role', ['trainer', 'owner']);
+      .inFilter('role', ['trainer', 'class_owner', 'owner']);
 
   // Deduplica per utente
   final Map<String, Map<String, dynamic>> byUser = {};
@@ -41,10 +55,10 @@ final _allTeamProvider =
         (a['full_name'] as String).compareTo(b['full_name'] as String));
 });
 
-/// Tutte le sale su tutte le sedi dell'utente
+/// Tutte le sale su tutte le sedi dell'org
 final _allRoomsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final sedi = await ref.watch(userSediProvider.future);
+  final sedi = await ref.watch(_orgSediProvider.future);
   if (sedi.isEmpty) return [];
 
   final client    = ref.watch(supabaseClientProvider);
@@ -59,10 +73,10 @@ final _allRoomsProvider =
   return (data as List).cast<Map<String, dynamic>>();
 });
 
-/// Tutti i corsi su tutte le sedi dell'utente
+/// Tutti i corsi su tutte le sedi dell'org
 final _allCoursesProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final sedi = await ref.watch(userSediProvider.future);
+  final sedi = await ref.watch(_orgSediProvider.future);
   if (sedi.isEmpty) return [];
 
   final client    = ref.watch(supabaseClientProvider);
@@ -86,7 +100,7 @@ class StudioInfoScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sediAsync    = ref.watch(_studioSediProvider);
+    final sediAsync    = ref.watch(_orgSediProvider);
     final roomsAsync   = ref.watch(_allRoomsProvider);
     final teamAsync    = ref.watch(_allTeamProvider);
     final coursesAsync = ref.watch(_allCoursesProvider);

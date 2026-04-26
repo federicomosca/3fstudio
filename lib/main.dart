@@ -28,10 +28,8 @@ void main() async {
       options.sendDefaultPii = true;
       // Set tracesSampleRate to 1.0 to capture 100% of transactions for tracing.
       // We recommend adjusting this value in production.
-      options.tracesSampleRate = 1.0;
-      // The sampling rate for profiling is relative to tracesSampleRate
-      // Setting to 1.0 will profile 100% of sampled transactions:
-      options.profilesSampleRate = 1.0;
+      options.tracesSampleRate = 0.2;
+      options.profilesSampleRate = 0.1;
     },
     appRunner: () =>
         runApp(SentryWidget(child: const ProviderScope(child: App3FStudio()))),

@@ -78,7 +78,7 @@ scripts/
 
 Tabelle: `studios`, `users`, `user_studio_roles`, `rooms`, `courses`, `lessons`, `plans`, `user_plans`, `bookings`, `waitlist`
 
-Tipi di corso: `group`, `personal`  
+Tipi di corso: `group`, `personal`, `shared` (personal diviso tra 2-3 persone max)  
 Tipi di piano: `credits`, `unlimited`, `trial`  
 Stati booking: `booked`, `cancelled`, `attended`, `no_show`
 
