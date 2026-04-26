@@ -33,10 +33,10 @@ Un utente può avere più ruoli contemporaneamente (es. Vincenzo è owner + clas
 - Nome app: **3F Training**
 - Logo: cerchio azzurro chiaro (`#EDF2F8`), testo "3F" blu medio, scritta "TRAINING" navy scuro, archi e triangoli cyan
 - Palette principale:
-  - `navy   = #0A1726` — sfondo scuro, AppBar, NavBar
-  - `blue   = #0081C8` — accento principale (era `lime`)
-  - `cyan   = #50C0D0` — accento secondario (triangoli logo)
-  - `lightBg = #EDF2F8` — sfondo light mode
+  - `navy   = #0A1A0E` — sfondo scuro, AppBar, NavBar (verde foresta)
+  - `blue   = #1EA850` — accento principale (verde)
+  - `cyan   = #50D080` — accento secondario (verde chiaro)
+  - `lightBg = #EDF7EF` — sfondo light mode
 - Alias per retrocompatibilità: `charcoal = navy`, `lime = blue`
 - **Dark mode forzata** (`ThemeMode.dark` in main.dart)
 - Tagline: *"Qui non ti alleni. Impari ad allenarti."*

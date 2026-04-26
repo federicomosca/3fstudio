@@ -6,7 +6,43 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../core/providers/studio_provider.dart';
 
-// ── Provider ──────────────────────────────────────────────────────────────────
+// ── Providers ─────────────────────────────────────────────────────────────────
+
+/// Trainers who already have an account but are NOT yet assigned to [studioId].
+final _assignableTrainersProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final studioId = ref.watch(currentStudioIdProvider);
+  if (studioId == null) return [];
+  final client = ref.watch(supabaseClientProvider);
+
+  // All users that have the trainer role in any studio.
+  final allTrainers = await client
+      .from('user_studio_roles')
+      .select('user_id, users(id, full_name, email, phone)')
+      .eq('role', 'trainer');
+
+  // User IDs already present in this studio (any role).
+  final inStudio = await client
+      .from('user_studio_roles')
+      .select('user_id')
+      .eq('studio_id', studioId);
+
+  final inStudioIds =
+      (inStudio as List).map((r) => r['user_id'] as String).toSet();
+
+  final Map<String, Map<String, dynamic>> byUser = {};
+  for (final row in (allTrainers as List)) {
+    final user = row['users'] as Map<String, dynamic>;
+    final uid = user['id'] as String;
+    if (!inStudioIds.contains(uid)) {
+      byUser[uid] = user;
+    }
+  }
+  final result = byUser.values.toList()
+    ..sort((a, b) => (a['full_name'] as String? ?? '')
+        .compareTo(b['full_name'] as String? ?? ''));
+  return result;
+});
 
 final _allCoursesProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
@@ -69,7 +105,10 @@ class _TeamScreenState extends ConsumerState<TeamScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => _AddTrainerSheet(
-        onCreated: () => ref.invalidate(_teamProvider(!_showArchived)),
+        onCreated: () {
+          ref.invalidate(_teamProvider(!_showArchived));
+          ref.invalidate(_assignableTrainersProvider);
+        },
       ),
     );
   }
@@ -614,6 +653,8 @@ class _CourseOwnerToggleState extends ConsumerState<_CourseOwnerToggle> {
 
 // ── Add trainer sheet ─────────────────────────────────────────────────────────
 
+enum _AddMode { create, existing }
+
 class _AddTrainerSheet extends ConsumerStatefulWidget {
   final VoidCallback onCreated;
   const _AddTrainerSheet({required this.onCreated});
@@ -623,15 +664,30 @@ class _AddTrainerSheet extends ConsumerStatefulWidget {
 }
 
 class _AddTrainerSheetState extends ConsumerState<_AddTrainerSheet> {
+  _AddMode _mode = _AddMode.create;
+
+  // ── "Nuovo" state ────────────────────────────────────────────────────────
   final _formKey   = GlobalKey<FormState>();
   final _nameCtrl  = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _passCtrl  = TextEditingController();
-
   String _selectedRole = 'trainer';
-  bool   _loading      = false;
+
+  // ── "Esistente" state ────────────────────────────────────────────────────
+  final _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+  Map<String, dynamic>? _selectedExisting;
+
+  bool    _loading = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(
+        () => setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase()));
+  }
 
   @override
   void dispose() {
@@ -639,10 +695,11 @@ class _AddTrainerSheetState extends ConsumerState<_AddTrainerSheet> {
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _passCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  Future<void> _submitNew() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() { _loading = true; _error = null; });
 
@@ -688,6 +745,44 @@ class _AddTrainerSheetState extends ConsumerState<_AddTrainerSheet> {
     }
   }
 
+  Future<void> _submitExisting() async {
+    final user = _selectedExisting;
+    if (user == null) return;
+    setState(() { _loading = true; _error = null; });
+
+    try {
+      final studioId = ref.read(currentStudioIdProvider);
+      if (studioId == null) throw Exception('Studio non trovato');
+
+      final db = ref.read(supabaseClientProvider);
+      // Upsert: handles the case where the row exists but is archived.
+      await db.from('user_studio_roles').upsert(
+        {
+          'user_id':   user['id'] as String,
+          'studio_id': studioId,
+          'role':      'trainer',
+          'is_active': true,
+        },
+        onConflict: 'user_id,studio_id,role',
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onCreated();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${user['full_name'] ?? user['email']} aggiunto a questa sede!'),
+            backgroundColor: Colors.green.shade600,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -695,129 +790,358 @@ class _AddTrainerSheetState extends ConsumerState<_AddTrainerSheet> {
     return Padding(
       padding: EdgeInsets.fromLTRB(
           24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle
-            Center(
-              child: Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 20),
-            Text('Aggiungi membro',
-                style: theme.textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text('Crea un account per il nuovo membro del team.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: Theme.of(context).colorScheme.onSurface.withAlpha(150))),
-            const SizedBox(height: 24),
+          ),
+          const SizedBox(height: 20),
+          Text('Aggiungi membro',
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
 
-            // Ruolo selector
-            _RoleChips(
-              selected: _selectedRole,
-              onChanged: (v) => setState(() => _selectedRole = v),
-            ),
-            const SizedBox(height: 16),
-
-            // Nome
-            TextFormField(
-              controller: _nameCtrl,
-              textInputAction: TextInputAction.next,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Nome completo',
-                prefixIcon: Icon(Icons.person_outlined),
+          // ── Mode selector ──────────────────────────────────────────────
+          SegmentedButton<_AddMode>(
+            segments: const [
+              ButtonSegment(
+                value: _AddMode.create,
+                icon: Icon(Icons.person_add_outlined),
+                label: Text('Nuovo account'),
               ),
-              validator: (v) =>
-                  v == null || v.trim().isEmpty ? 'Campo obbligatorio' : null,
-            ),
-            const SizedBox(height: 12),
-
-            // Email
-            TextFormField(
-              controller: _emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                prefixIcon: Icon(Icons.email_outlined),
-              ),
-              validator: (v) =>
-                  v == null || !v.contains('@') ? 'Email non valida' : null,
-            ),
-            const SizedBox(height: 12),
-
-            // Telefono (opzionale)
-            TextFormField(
-              controller: _phoneCtrl,
-              keyboardType: TextInputType.phone,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: 'Telefono (opzionale)',
-                prefixIcon: Icon(Icons.phone_outlined),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Password temporanea
-            TextFormField(
-              controller: _passCtrl,
-              textInputAction: TextInputAction.done,
-              onFieldSubmitted: (_) => _submit(),
-              decoration: const InputDecoration(
-                labelText: 'Password temporanea',
-                prefixIcon: Icon(Icons.lock_outlined),
-                helperText: 'Comunicala al trainer per il primo accesso',
-              ),
-              validator: (v) =>
-                  v == null || v.length < 8 ? 'Minimo 8 caratteri' : null,
-            ),
-
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: theme.colorScheme.error.withAlpha(100)),
-                ),
-                child: Row(children: [
-                  Icon(Icons.error_outline,
-                      color: theme.colorScheme.onErrorContainer, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(_error!,
-                      style: TextStyle(
-                          color: theme.colorScheme.onErrorContainer,
-                          fontSize: 13))),
-                ]),
+              ButtonSegment(
+                value: _AddMode.existing,
+                icon: Icon(Icons.person_search_outlined),
+                label: Text('Già registrato'),
               ),
             ],
+            selected: {_mode},
+            onSelectionChanged: (s) =>
+                setState(() { _mode = s.first; _error = null; }),
+          ),
+          const SizedBox(height: 20),
 
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _submit,
-                child: _loading
-                    ? const SizedBox(
-                        height: 20, width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Crea account'),
-              ),
+          if (_mode == _AddMode.create)
+            _NewMemberForm(
+              formKey: _formKey,
+              nameCtrl: _nameCtrl,
+              emailCtrl: _emailCtrl,
+              phoneCtrl: _phoneCtrl,
+              passCtrl: _passCtrl,
+              selectedRole: _selectedRole,
+              onRoleChanged: (v) => setState(() => _selectedRole = v),
+              loading: _loading,
+              error: _error,
+              onSubmit: _submitNew,
+            )
+          else
+            _ExistingMemberPicker(
+              searchCtrl: _searchCtrl,
+              searchQuery: _searchQuery,
+              selected: _selectedExisting,
+              onSelected: (u) => setState(() => _selectedExisting = u),
+              loading: _loading,
+              error: _error,
+              onSubmit: _submitExisting,
             ),
-          ],
-        ),
+        ],
       ),
+    );
+  }
+}
+
+// ── New member form (extracted for clarity) ───────────────────────────────────
+
+class _NewMemberForm extends StatelessWidget {
+  final GlobalKey<FormState> formKey;
+  final TextEditingController nameCtrl, emailCtrl, phoneCtrl, passCtrl;
+  final String selectedRole;
+  final ValueChanged<String> onRoleChanged;
+  final bool loading;
+  final String? error;
+  final VoidCallback onSubmit;
+
+  const _NewMemberForm({
+    required this.formKey,
+    required this.nameCtrl,
+    required this.emailCtrl,
+    required this.phoneCtrl,
+    required this.passCtrl,
+    required this.selectedRole,
+    required this.onRoleChanged,
+    required this.loading,
+    required this.error,
+    required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Form(
+      key: formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _RoleChips(selected: selectedRole, onChanged: onRoleChanged),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: nameCtrl,
+            textInputAction: TextInputAction.next,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Nome completo',
+              prefixIcon: Icon(Icons.person_outlined),
+            ),
+            validator: (v) =>
+                v == null || v.trim().isEmpty ? 'Campo obbligatorio' : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: emailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: 'Email',
+              prefixIcon: Icon(Icons.email_outlined),
+            ),
+            validator: (v) =>
+                v == null || !v.contains('@') ? 'Email non valida' : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: phoneCtrl,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: 'Telefono (opzionale)',
+              prefixIcon: Icon(Icons.phone_outlined),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: passCtrl,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => onSubmit(),
+            decoration: const InputDecoration(
+              labelText: 'Password temporanea',
+              prefixIcon: Icon(Icons.lock_outlined),
+              helperText: 'Comunicala al trainer per il primo accesso',
+            ),
+            validator: (v) =>
+                v == null || v.length < 8 ? 'Minimo 8 caratteri' : null,
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 12),
+            _ErrorBox(error!),
+          ],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: loading ? null : onSubmit,
+              child: loading
+                  ? const SizedBox(
+                      height: 20, width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Crea account'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Existing member picker ─────────────────────────────────────────────────────
+
+class _ExistingMemberPicker extends ConsumerWidget {
+  final TextEditingController searchCtrl;
+  final String searchQuery;
+  final Map<String, dynamic>? selected;
+  final ValueChanged<Map<String, dynamic>?> onSelected;
+  final bool loading;
+  final String? error;
+  final VoidCallback onSubmit;
+
+  const _ExistingMemberPicker({
+    required this.searchCtrl,
+    required this.searchQuery,
+    required this.selected,
+    required this.onSelected,
+    required this.loading,
+    required this.error,
+    required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final assignableAsync = ref.watch(_assignableTrainersProvider);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Seleziona un trainer già registrato nell\'app e aggiungilo a questa sede.',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurface.withAlpha(150)),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: searchCtrl,
+          decoration: const InputDecoration(
+            hintText: 'Cerca per nome…',
+            prefixIcon: Icon(Icons.search),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 8),
+        assignableAsync.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (e, _) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: _ErrorBox(e.toString()),
+          ),
+          data: (all) {
+            final filtered = searchQuery.isEmpty
+                ? all
+                : all.where((u) {
+                    final name =
+                        (u['full_name'] as String? ?? '').toLowerCase();
+                    final email =
+                        (u['email'] as String? ?? '').toLowerCase();
+                    return name.contains(searchQuery) ||
+                        email.contains(searchQuery);
+                  }).toList();
+
+            if (all.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'Nessun trainer disponibile da altre sedi.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withAlpha(150)),
+                ),
+              );
+            }
+
+            if (filtered.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'Nessun risultato per "$searchQuery".',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withAlpha(150)),
+                ),
+              );
+            }
+
+            return ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: filtered.length,
+                separatorBuilder: (context, i) =>
+                    const SizedBox(height: 4),
+                itemBuilder: (context, i) {
+                  final u = filtered[i];
+                  final name = u['full_name'] as String? ??
+                      u['email'] as String? ?? '—';
+                  final isSelected = selected?['id'] == u['id'];
+                  return ListTile(
+                    dense: true,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    tileColor: isSelected
+                        ? theme.colorScheme.primary.withAlpha(25)
+                        : theme.colorScheme.surface,
+                    leading: CircleAvatar(
+                      radius: 18,
+                      backgroundColor:
+                          theme.colorScheme.primary.withAlpha(20),
+                      child: Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13),
+                      ),
+                    ),
+                    title: Text(name,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500)),
+                    subtitle: Text(u['email'] as String? ?? '',
+                        style: const TextStyle(fontSize: 12)),
+                    trailing: isSelected
+                        ? Icon(Icons.check_circle,
+                            color: theme.colorScheme.primary)
+                        : null,
+                    onTap: () => onSelected(isSelected ? null : u),
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        if (error != null) ...[
+          const SizedBox(height: 12),
+          _ErrorBox(error!),
+        ],
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: (loading || selected == null) ? null : onSubmit,
+            child: loading
+                ? const SizedBox(
+                    height: 20, width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Aggiungi a questa sede'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Shared error box ───────────────────────────────────────────────────────────
+
+class _ErrorBox extends StatelessWidget {
+  final String message;
+  const _ErrorBox(this.message);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.error.withAlpha(100)),
+      ),
+      child: Row(children: [
+        Icon(Icons.error_outline,
+            color: theme.colorScheme.onErrorContainer, size: 16),
+        const SizedBox(width: 8),
+        Expanded(
+            child: Text(message,
+                style: TextStyle(
+                    color: theme.colorScheme.onErrorContainer,
+                    fontSize: 13))),
+      ]),
     );
   }
 }

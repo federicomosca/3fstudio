@@ -3,10 +3,10 @@ import 'package:flutter/services.dart';
 
 class AppTheme {
   // ── Brand palette 3F Training ────────────────────────────────────────────
-  static const Color navy    = Color(0xFF0A1726);  // sfondo scuro, AppBar, NavBar
-  static const Color blue    = Color(0xFF0081C8);  // accento principale
-  static const Color cyan    = Color(0xFF50C0D0);  // accento secondario
-  static const Color lightBg = Color(0xFFEDF2F8);  // sfondo light mode
+  static const Color navy    = Color(0xFF0A1A0E);  // sfondo scuro, AppBar, NavBar
+  static const Color blue    = Color(0xFF1EA850);  // accento principale (verde)
+  static const Color cyan    = Color(0xFF50D080);  // accento secondario (verde chiaro)
+  static const Color lightBg = Color(0xFFEDF7EF);  // sfondo light mode
   static const Color white   = Color(0xFFFFFFFF);
 
   // Backward-compat aliases
@@ -27,9 +27,9 @@ class AppTheme {
   static Color sedeColor(int index) => sedeColors[index % sedeColors.length];
 
   // Dark mode surfaces
-  static const Color darkSurface = Color(0xFF0D1A27);
-  static const Color darkBg      = Color(0xFF060E18);
-  static const Color darkOutline = Color(0xFF1A2E42);
+  static const Color darkSurface = Color(0xFF0D1A10);
+  static const Color darkBg      = Color(0xFF060E08);
+  static const Color darkOutline = Color(0xFF1A2E1A);
 
   // ── LIGHT theme ──────────────────────────────────────────────────────────
   static ThemeData get light => ThemeData(
@@ -39,25 +39,25 @@ class AppTheme {
       brightness:              Brightness.light,
       primary:                 navy,
       onPrimary:               white,
-      primaryContainer:        Color(0xFFBDD8EE),
+      primaryContainer:        Color(0xFFBDE8CA),
       onPrimaryContainer:      navy,
       secondary:               blue,
       onSecondary:             white,
-      secondaryContainer:      Color(0xFFB8E0F5),
-      onSecondaryContainer:    Color(0xFF003A5C),
+      secondaryContainer:      Color(0xFFB8EBC8),
+      onSecondaryContainer:    Color(0xFF003A1C),
       tertiary:                cyan,
       onTertiary:              white,
-      tertiaryContainer:       Color(0xFFBCEEF5),
-      onTertiaryContainer:     Color(0xFF003A42),
+      tertiaryContainer:       Color(0xFFBCF5CE),
+      onTertiaryContainer:     Color(0xFF003A22),
       error:                   Color(0xFFD32F2F),
       onError:                 white,
       errorContainer:          Color(0xFFFFEBEE),
       onErrorContainer:        Color(0xFFB71C1C),
       surface:                 white,
       onSurface:               navy,
-      surfaceContainerHighest: Color(0xFFDCEAF5),
-      outline:                 Color(0xFFADC6DC),
-      outlineVariant:          Color(0xFFD0E3EF),
+      surfaceContainerHighest: Color(0xFFDCF5E4),
+      outline:                 Color(0xFFADDCC0),
+      outlineVariant:          Color(0xFFD0EFD8),
       shadow:                  Colors.black,
       scrim:                   Colors.black,
       inverseSurface:          navy,
@@ -85,18 +85,18 @@ class AppTheme {
       backgroundColor: navy,
       elevation:       0,
       height:          64,
-      indicatorColor:  Color(0x330081C8),
+      indicatorColor:  Color(0x331EA850),
       iconTheme: WidgetStateProperty.resolveWith((states) {
         final selected = states.contains(WidgetState.selected);
         return IconThemeData(
-          color: selected ? blue : const Color(0xFF6A90A8),
+          color: selected ? blue : const Color(0xFF6AA880),
           size:  24,
         );
       }),
       labelTextStyle: WidgetStateProperty.resolveWith((states) {
         final selected = states.contains(WidgetState.selected);
         return TextStyle(
-          color:      selected ? blue : const Color(0xFF6A90A8),
+          color:      selected ? blue : const Color(0xFF6AA880),
           fontSize:   11,
           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
         );
@@ -113,11 +113,11 @@ class AppTheme {
     inputDecorationTheme: InputDecorationTheme(
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFADC6DC)),
+        borderSide: const BorderSide(color: Color(0xFFADDCC0)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFADC6DC)),
+        borderSide: const BorderSide(color: Color(0xFFADDCC0)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
@@ -173,13 +173,13 @@ class AppTheme {
     ),
     tabBarTheme: const TabBarThemeData(
       labelColor:           white,
-      unselectedLabelColor: Color(0xFF8AAFC4),
+      unselectedLabelColor: Color(0xFF8AC4A0),
       indicatorColor:       blue,
       dividerColor:         Colors.transparent,
     ),
     chipTheme: const ChipThemeData(shape: StadiumBorder()),
     dividerTheme: const DividerThemeData(
-      color: Color(0xFFD0E3EF), thickness: 1, space: 1,
+      color: Color(0xFFD0EFD8), thickness: 1, space: 1,
     ),
     listTileTheme: const ListTileThemeData(
       contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -208,17 +208,17 @@ class AppTheme {
     scaffoldBackgroundColor: darkBg,
     colorScheme: ColorScheme(
       brightness:              Brightness.dark,
-      primary:                 const Color(0xFF29A8E8),   // blue chiaro per dark mode
-      onPrimary:               const Color(0xFF001E30),
-      primaryContainer:        const Color(0xFF00334D),
-      onPrimaryContainer:      const Color(0xFF8ED4F5),
+      primary:                 const Color(0xFF29C860),   // verde chiaro per dark mode
+      onPrimary:               const Color(0xFF001E10),
+      primaryContainer:        const Color(0xFF003A1A),
+      onPrimaryContainer:      const Color(0xFF8EF5B8),
       secondary:               cyan,
-      onSecondary:             const Color(0xFF001E25),
-      secondaryContainer:      const Color(0xFF003040),
+      onSecondary:             const Color(0xFF001E10),
+      secondaryContainer:      const Color(0xFF003020),
       onSecondaryContainer:    cyan,
       tertiary:                cyan,
-      onTertiary:              const Color(0xFF001E25),
-      tertiaryContainer:       const Color(0xFF003040),
+      onTertiary:              const Color(0xFF001E10),
+      tertiaryContainer:       const Color(0xFF003020),
       onTertiaryContainer:     cyan,
       error:                   const Color(0xFFCF6679),
       onError:                 const Color(0xFF690020),
@@ -226,9 +226,9 @@ class AppTheme {
       onErrorContainer:        const Color(0xFFFFDAD6),
       surface:                 darkSurface,
       onSurface:               white,
-      surfaceContainerHighest: const Color(0xFF112030),
+      surfaceContainerHighest: const Color(0xFF102012),
       outline:                 darkOutline,
-      outlineVariant:          const Color(0xFF142030),
+      outlineVariant:          const Color(0xFF142016),
       shadow:                  Colors.black,
       scrim:                   Colors.black,
       inverseSurface:          white,
@@ -236,7 +236,7 @@ class AppTheme {
       inversePrimary:          navy,
     ),
     appBarTheme: const AppBarTheme(
-      backgroundColor:    Color(0xFF080F18),
+      backgroundColor:    Color(0xFF080F09),
       foregroundColor:    white,
       centerTitle:        false,
       elevation:          0,
@@ -253,21 +253,21 @@ class AppTheme {
       actionsIconTheme: IconThemeData(color: white),
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: const Color(0xFF080F18),
+      backgroundColor: const Color(0xFF080F09),
       elevation:       0,
       height:          64,
-      indicatorColor:  const Color(0xFF29A8E8).withAlpha(50),
+      indicatorColor:  const Color(0xFF29C860).withAlpha(50),
       iconTheme: WidgetStateProperty.resolveWith((states) {
         final selected = states.contains(WidgetState.selected);
         return IconThemeData(
-          color: selected ? const Color(0xFF29A8E8) : const Color(0xFF4A7090),
+          color: selected ? const Color(0xFF29C860) : const Color(0xFF4A7055),
           size:  24,
         );
       }),
       labelTextStyle: WidgetStateProperty.resolveWith((states) {
         final selected = states.contains(WidgetState.selected);
         return TextStyle(
-          color:      selected ? const Color(0xFF29A8E8) : const Color(0xFF4A7090),
+          color:      selected ? const Color(0xFF29C860) : const Color(0xFF4A7055),
           fontSize:   11,
           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
         );
@@ -292,7 +292,7 @@ class AppTheme {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFF29A8E8), width: 2),
+        borderSide: const BorderSide(color: Color(0xFF29C860), width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
@@ -301,13 +301,13 @@ class AppTheme {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       filled:    true,
       fillColor: darkSurface,
-      labelStyle:  const TextStyle(color: Color(0xFF5A8AAA)),
-      hintStyle:   const TextStyle(color: Color(0xFF3A6080)),
+      labelStyle:  const TextStyle(color: Color(0xFF5A8A6A)),
+      hintStyle:   const TextStyle(color: Color(0xFF3A6045)),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF29A8E8),
-        foregroundColor: const Color(0xFF001E30),
+        backgroundColor: const Color(0xFF29C860),
+        foregroundColor: const Color(0xFF001E10),
         minimumSize:     const Size.fromHeight(52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         elevation: 0,
@@ -318,8 +318,8 @@ class AppTheme {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFF29A8E8),
-        foregroundColor: const Color(0xFF001E30),
+        backgroundColor: const Color(0xFF29C860),
+        foregroundColor: const Color(0xFF001E10),
         minimumSize:     const Size.fromHeight(52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         textStyle: const TextStyle(
@@ -328,43 +328,43 @@ class AppTheme {
       ),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(foregroundColor: const Color(0xFF29A8E8)),
+      style: TextButton.styleFrom(foregroundColor: const Color(0xFF29C860)),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        foregroundColor: const Color(0xFF29A8E8),
-        side: const BorderSide(color: Color(0xFF29A8E8), width: 1.5),
+        foregroundColor: const Color(0xFF29C860),
+        side: const BorderSide(color: Color(0xFF29C860), width: 1.5),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         textStyle: const TextStyle(fontWeight: FontWeight.w700),
       ),
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
-      backgroundColor: Color(0xFF29A8E8),
-      foregroundColor: Color(0xFF001E30),
+      backgroundColor: Color(0xFF29C860),
+      foregroundColor: Color(0xFF001E10),
       elevation:       2,
       extendedTextStyle: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
     ),
     tabBarTheme: const TabBarThemeData(
       labelColor:           white,
-      unselectedLabelColor: Color(0xFF4A7090),
-      indicatorColor:       Color(0xFF29A8E8),
+      unselectedLabelColor: Color(0xFF4A7055),
+      indicatorColor:       Color(0xFF29C860),
       dividerColor:         Colors.transparent,
     ),
     chipTheme: ChipThemeData(
       shape: const StadiumBorder(),
-      backgroundColor: const Color(0xFF0A1826),
-      selectedColor:   const Color(0xFF29A8E8).withAlpha(50),
+      backgroundColor: const Color(0xFF0A1A0E),
+      selectedColor:   const Color(0xFF29C860).withAlpha(50),
       side: const BorderSide(color: darkOutline),
       labelStyle: const TextStyle(color: white),
     ),
     dividerTheme: const DividerThemeData(
-      color: Color(0xFF162030), thickness: 1, space: 1,
+      color: Color(0xFF162018), thickness: 1, space: 1,
     ),
     listTileTheme: const ListTileThemeData(
       contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       tileColor:      darkSurface,
       textColor:      white,
-      iconColor:      Color(0xFF5A8AAA),
+      iconColor:      Color(0xFF5A8A6A),
     ),
     textTheme: const TextTheme(
       displayLarge:   TextStyle(fontWeight: FontWeight.w900, letterSpacing: -2.0, color: white),
@@ -380,7 +380,7 @@ class AppTheme {
       labelMedium:    TextStyle(fontWeight: FontWeight.w600, color: white),
       bodyLarge:      TextStyle(fontWeight: FontWeight.w400, color: white),
       bodyMedium:     TextStyle(fontWeight: FontWeight.w400, color: white),
-      bodySmall:      TextStyle(fontWeight: FontWeight.w400, color: Color(0xFF80A8C0)),
+      bodySmall:      TextStyle(fontWeight: FontWeight.w400, color: Color(0xFF80C090)),
     ),
   );
 }

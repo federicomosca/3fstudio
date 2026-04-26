@@ -11,6 +11,8 @@ import '../../../features/auth/providers/auth_provider.dart';
 class _ReportPeriodNotifier extends Notifier<int> {
   @override
   int build() => 30;
+
+  void setPeriod(int days) => state = days;
 }
 
 final _reportPeriodProvider =
@@ -217,7 +219,7 @@ class _PeriodChip extends ConsumerWidget {
       label: Text(label),
       selected: isSelected,
       onSelected: (_) =>
-          ref.read(_reportPeriodProvider.notifier).state = value,
+          ref.read(_reportPeriodProvider.notifier).setPeriod(value),
       selectedColor: AppTheme.blue.withAlpha(40),
       labelStyle: TextStyle(
         color: isSelected ? AppTheme.blue : null,

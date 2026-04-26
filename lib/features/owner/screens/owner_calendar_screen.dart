@@ -236,11 +236,11 @@ class _OwnerCalendarScreenState extends ConsumerState<OwnerCalendarScreen> {
                 formatButtonVisible: false, titleCentered: true),
             calendarStyle: const CalendarStyle(
               todayDecoration: BoxDecoration(
-                color: AppTheme.lime,
+                color: AppTheme.cyan,
                 shape: BoxShape.circle,
               ),
               todayTextStyle: TextStyle(
-                color: Colors.white,
+                color: AppTheme.navy,
                 fontWeight: FontWeight.w800,
               ),
               selectedDecoration: BoxDecoration(
@@ -1337,8 +1337,19 @@ class _CreateLessonSheetState extends ConsumerState<_CreateLessonSheet> {
   void initState() {
     super.initState();
     final d = widget.initialDate;
-    _startTime = DateTime(d.year, d.month, d.day, 9, 0);
-    _endTime = DateTime(d.year, d.month, d.day, 10, 0);
+    final now = DateTime.now();
+    final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
+    int defaultHour;
+    if (isToday) {
+      // current time + 1h, rounded up to next full hour
+      final plusOne = now.add(const Duration(hours: 1));
+      defaultHour = plusOne.minute == 0 ? plusOne.hour : plusOne.hour + 1;
+      if (defaultHour > 23) defaultHour = 23;
+    } else {
+      defaultHour = 9;
+    }
+    _startTime = DateTime(d.year, d.month, d.day, defaultHour, 0);
+    _endTime = DateTime(d.year, d.month, d.day, defaultHour + 1 > 23 ? 23 : defaultHour + 1, 0);
     _recurUntil = d.add(const Duration(days: 28));
     _capCtrl.text = '10';
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadOccupiedRooms());

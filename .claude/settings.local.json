@@ -38,7 +38,9 @@
       "Bash(xargs ls *)",
       "Bash(xargs cat *)",
       "Bash(grep -E \"^error|lib\\\\\\\\.+error\")",
-      "Bash(grep -E \"\\\\.dart$\")"
+      "Bash(grep -E \"\\\\.dart$\")",
+      "Bash(flutter --version)",
+      "Bash(flutter build *)"
     ]
   }
 }

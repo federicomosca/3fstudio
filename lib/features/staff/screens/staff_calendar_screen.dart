@@ -127,11 +127,11 @@ class _StaffCalendarScreenState extends ConsumerState<StaffCalendarScreen> {
                 formatButtonVisible: false, titleCentered: true),
             calendarStyle: const CalendarStyle(
               todayDecoration: BoxDecoration(
-                color: AppTheme.lime,
+                color: AppTheme.cyan,
                 shape: BoxShape.circle,
               ),
               todayTextStyle: TextStyle(
-                color: Colors.white,
+                color: AppTheme.navy,
                 fontWeight: FontWeight.w800,
               ),
               selectedDecoration: BoxDecoration(
