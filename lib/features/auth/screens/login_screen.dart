@@ -47,6 +47,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _signIn() async {
     if (!_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
     setState(() { _loading = true; _error = null; });
     try {
       await ref.read(authNotifierProvider.notifier).signIn(

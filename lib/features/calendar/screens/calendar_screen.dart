@@ -27,79 +27,85 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     // Only the calendar widget needs these two providers.
     // Booking-related providers are isolated in _LessonList below.
     final selectedDay = ref.watch(selectedDayProvider);
-    final lessonDays  = ref.watch(lessonDaysProvider(_focusedMonth));
+    final lessonDays = ref.watch(lessonDaysProvider(_focusedMonth));
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Calendario'),
         actions: const [CreditsChip()],
       ),
-      body: Column(
-        children: [
-          TableCalendar(
-            firstDay: DateTime.utc(2024, 1, 1),
-            lastDay: DateTime.utc(2027, 12, 31),
-            focusedDay: selectedDay,
-            selectedDayPredicate: (day) => isSameDay(day, selectedDay),
-            calendarFormat: CalendarFormat.month,
-            availableCalendarFormats: const {CalendarFormat.month: 'Mese'},
-            locale: 'it_IT',
-            startingDayOfWeek: StartingDayOfWeek.monday,
-            headerStyle: const HeaderStyle(
-              formatButtonVisible: false,
-              titleCentered: true,
-            ),
-            calendarStyle: const CalendarStyle(
-              todayDecoration: BoxDecoration(
-                color: AppTheme.cyan,
-                shape: BoxShape.circle,
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: TableCalendar(
+              firstDay: DateTime.utc(2024, 1, 1),
+              lastDay: DateTime.utc(2027, 12, 31),
+              focusedDay: selectedDay,
+              selectedDayPredicate: (day) => isSameDay(day, selectedDay),
+              calendarFormat: CalendarFormat.month,
+              availableCalendarFormats: const {CalendarFormat.month: 'Mese'},
+              locale: 'it_IT',
+              startingDayOfWeek: StartingDayOfWeek.monday,
+              headerStyle: const HeaderStyle(
+                formatButtonVisible: false,
+                titleCentered: true,
               ),
-              todayTextStyle: TextStyle(
-                color: AppTheme.navy,
-                fontWeight: FontWeight.w800,
+              calendarStyle: const CalendarStyle(
+                todayDecoration: BoxDecoration(
+                  color: AppTheme.cyan,
+                  shape: BoxShape.circle,
+                ),
+                todayTextStyle: TextStyle(
+                  color: AppTheme.navy,
+                  fontWeight: FontWeight.w800,
+                ),
+                selectedDecoration: BoxDecoration(
+                  color: AppTheme.blue,
+                  shape: BoxShape.circle,
+                ),
+                selectedTextStyle: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+                markerDecoration: BoxDecoration(
+                  color: AppTheme.lime,
+                  shape: BoxShape.circle,
+                ),
+                markerSize: 5,
+                weekendTextStyle: TextStyle(color: Color(0xFFAAAAAA)),
               ),
-              selectedDecoration: BoxDecoration(
-                color: AppTheme.blue,
-                shape: BoxShape.circle,
-              ),
-              selectedTextStyle: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-              markerDecoration: BoxDecoration(
-                color: AppTheme.lime,
-                shape: BoxShape.circle,
-              ),
-              markerSize: 5,
-              weekendTextStyle: TextStyle(color: Color(0xFFAAAAAA)),
-            ),
-            eventLoader: (day) {
-              final days = lessonDays.whenOrNull(data: (d) => d) ?? {};
-              final normalized = DateTime(day.year, day.month, day.day);
-              return days.contains(normalized) ? [true] : [];
-            },
-            onDaySelected: (selected, focused) {
-              ref.read(selectedDayProvider.notifier).set(selected);
-            },
-            onPageChanged: (focused) {
-              setState(() => _focusedMonth = focused);
-              ref.read(selectedDayProvider.notifier).set(focused);
-            },
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                DateFormat('EEEE d MMMM', 'it_IT').format(selectedDay),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
-                    ),
-              ),
+              eventLoader: (day) {
+                final days = lessonDays.whenOrNull(data: (d) => d) ?? {};
+                final normalized = DateTime(day.year, day.month, day.day);
+                return days.contains(normalized) ? [true] : [];
+              },
+              onDaySelected: (selected, focused) {
+                ref.read(selectedDayProvider.notifier).set(selected);
+              },
+              onPageChanged: (focused) {
+                setState(() => _focusedMonth = focused);
+                ref.read(selectedDayProvider.notifier).set(focused);
+              },
             ),
           ),
-          Expanded(
+          const SliverToBoxAdapter(child: Divider(height: 1)),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  DateFormat('EEEE d MMMM', 'it_IT').format(selectedDay),
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withAlpha(180),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SliverFillRemaining(
             child: _LessonList(
               selectedDay: selectedDay,
               onBook: _book,
@@ -136,8 +142,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               '${dateFormat.format(lesson.startTime)} · '
               '${timeFormat.format(lesson.startTime)}–${timeFormat.format(lesson.endTime)}',
               style: TextStyle(
-                  color: Theme.of(ctx).colorScheme.onSurface.withAlpha(180),
-                  fontSize: 13),
+                color: Theme.of(ctx).colorScheme.onSurface.withAlpha(180),
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 12),
             const Text(
@@ -163,10 +170,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     if (confirmed != true || !mounted) return;
 
     try {
-      await ref.read(bookingNotifierProvider.notifier).bookTrialLesson(lesson.id);
+      await ref
+          .read(bookingNotifierProvider.notifier)
+          .bookTrialLesson(lesson.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Richiesta inviata per ${lesson.courseName}!')),
+          SnackBar(
+            content: Text('Richiesta inviata per ${lesson.courseName}!'),
+          ),
         );
       }
     } catch (e) {
@@ -180,9 +191,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   Future<void> _cancelTrial(Lesson lesson) async {
     final hours = lesson.cancellationHours;
-    final insideWindow = hours > 0 &&
+    final insideWindow =
+        hours > 0 &&
         DateTime.now().isAfter(
-            lesson.startTime.subtract(Duration(hours: hours)));
+          lesson.startTime.subtract(Duration(hours: hours)),
+        );
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -224,9 +237,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(insideWindow
-                ? 'Richiesta annullata · 1 credito prova scalato'
-                : 'Richiesta di prova annullata'),
+            content: Text(
+              insideWindow
+                  ? 'Richiesta annullata · 1 credito prova scalato'
+                  : 'Richiesta di prova annullata',
+            ),
           ),
         );
       }
@@ -258,9 +273,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   Future<void> _cancel(Lesson lesson) async {
     final hours = lesson.cancellationHours;
-    final insideWindow = hours > 0 &&
+    final insideWindow =
+        hours > 0 &&
         DateTime.now().isAfter(
-            lesson.startTime.subtract(Duration(hours: hours)));
+          lesson.startTime.subtract(Duration(hours: hours)),
+        );
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -302,9 +319,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(insideWindow
-                ? 'Prenotazione annullata · 1 credito scalato'
-                : 'Prenotazione annullata'),
+            content: Text(
+              insideWindow
+                  ? 'Prenotazione annullata · 1 credito scalato'
+                  : 'Prenotazione annullata',
+            ),
           ),
         );
       }
@@ -375,14 +394,14 @@ class _LessonList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lessons          = ref.watch(lessonsForDayProvider(selectedDay));
-    final userBookings     = ref.watch(userBookingsProvider);
-    final hasActivePlan    = ref.watch(hasActivePlanProvider);
-    final hasTrialCredit   = ref.watch(hasTrialCreditsProvider);
-    final hasTrialTime     = ref.watch(hasTrialTimePlanProvider);
-    final enrolled         = ref.watch(userEnrolledCourseIdsProvider);
-    final pending          = ref.watch(userPendingTrialLessonsProvider);
-    final waitlist         = ref.watch(userWaitlistProvider);
+    final lessons = ref.watch(lessonsForDayProvider(selectedDay));
+    final userBookings = ref.watch(userBookingsProvider);
+    final hasActivePlan = ref.watch(hasActivePlanProvider);
+    final hasTrialCredit = ref.watch(hasTrialCreditsProvider);
+    final hasTrialTime = ref.watch(hasTrialTimePlanProvider);
+    final enrolled = ref.watch(userEnrolledCourseIdsProvider);
+    final pending = ref.watch(userPendingTrialLessonsProvider);
+    final waitlist = ref.watch(userWaitlistProvider);
 
     return lessons.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -395,35 +414,42 @@ class _LessonList extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.event_busy,
-                    size: 48,
-                    color: Theme.of(context).colorScheme.onSurface.withAlpha(60)),
+                Icon(
+                  Icons.event_busy,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.onSurface.withAlpha(60),
+                ),
                 const SizedBox(height: 12),
                 Text(
                   'Nessuna lezione programmata',
                   style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface.withAlpha(150)),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withAlpha(150),
+                  ),
                 ),
               ],
             ),
           );
         }
 
-        final bookingMap          = userBookings.whenOrNull(data: (m) => m) ?? {};
-        final clientHasPlan       = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
-        final clientHasTrial      = hasTrialCredit.whenOrNull(data: (v) => v) ?? false;
-        final clientHasTrialTime  = hasTrialTime.whenOrNull(data: (v) => v) ?? false;
-        final enrolledIds         = enrolled.whenOrNull(data: (ids) => ids) ?? {};
-        final pendingIds          = pending.whenOrNull(data: (ids) => ids) ?? {};
-        final waitlistIds         = waitlist.whenOrNull(data: (ids) => ids) ?? {};
+        final bookingMap = userBookings.whenOrNull(data: (m) => m) ?? {};
+        final clientHasPlan = hasActivePlan.whenOrNull(data: (v) => v) ?? false;
+        final clientHasTrial =
+            hasTrialCredit.whenOrNull(data: (v) => v) ?? false;
+        final clientHasTrialTime =
+            hasTrialTime.whenOrNull(data: (v) => v) ?? false;
+        final enrolledIds = enrolled.whenOrNull(data: (ids) => ids) ?? {};
+        final pendingIds = pending.whenOrNull(data: (ids) => ids) ?? {};
+        final waitlistIds = waitlist.whenOrNull(data: (ids) => ids) ?? {};
 
         return ListView.builder(
           padding: const EdgeInsets.only(bottom: 100),
           itemCount: lessonList.length,
           itemBuilder: (context, index) {
-            final lesson       = lessonList[index];
+            final lesson = lessonList[index];
             final bookingStatus = bookingMap[lesson.id];
-            final isPending    = pendingIds.contains(lesson.id);
+            final isPending = pendingIds.contains(lesson.id);
             final isOnWaitlist = waitlistIds.contains(lesson.id);
 
             return LessonCard(
@@ -431,9 +457,11 @@ class _LessonList extends ConsumerWidget {
               lesson: lesson,
               bookingStatus: bookingStatus,
               // trial-by-time bypassa il check di enrollment (accesso libero a tutti i corsi)
-              hasActivePlan: clientHasTrialTime ||
+              hasActivePlan:
+                  clientHasTrialTime ||
                   (clientHasPlan && enrolledIds.contains(lesson.courseId)),
-              hasTrialCredits: clientHasTrial && !enrolledIds.contains(lesson.courseId),
+              hasTrialCredits:
+                  clientHasTrial && !enrolledIds.contains(lesson.courseId),
               isPendingTrial: isPending,
               isOnWaitlist: isOnWaitlist,
               bookedCount: lesson.bookedCount,

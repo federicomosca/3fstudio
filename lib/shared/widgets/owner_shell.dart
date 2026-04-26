@@ -18,6 +18,7 @@ class OwnerShell extends ConsumerWidget {
     final sel = _index(loc);
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: Column(
         children: [
           const SedeSelectorBar(profileRoute: '/owner/profile'),
