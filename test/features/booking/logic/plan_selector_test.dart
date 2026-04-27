@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:three_f_studio/features/booking/logic/plan_selector.dart';
+import 'package:studio/features/booking/logic/plan_selector.dart';
 
 Map<String, dynamic> _plan({
   required String type,

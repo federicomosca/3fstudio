@@ -7,6 +7,7 @@ import 'core/config/supabase_config.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'features/auth/providers/auth_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 void main() async {
@@ -28,23 +29,33 @@ void main() async {
       options.sendDefaultPii = true;
       // Set tracesSampleRate to 1.0 to capture 100% of transactions for tracing.
       // We recommend adjusting this value in production.
-      options.tracesSampleRate = 0.2;
-      options.profilesSampleRate = 0.1;
+      options.tracesSampleRate = 1.0; // abbassa a 0.2 dopo l'ottimizzazione
+      options.profilesSampleRate = 1.0;
     },
     appRunner: () =>
-        runApp(SentryWidget(child: const ProviderScope(child: App3FStudio()))),
+        runApp(SentryWidget(child: const ProviderScope(child: StudioApp()))),
   );
 }
 
-class App3FStudio extends ConsumerWidget {
-  const App3FStudio({super.key});
+class StudioApp extends ConsumerWidget {
+  const StudioApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
 
+    ref.listen(currentUserProvider, (_, user) {
+      if (user != null) {
+        Sentry.configureScope((scope) => scope.setUser(
+              SentryUser(id: user.id, email: user.email),
+            ));
+      } else {
+        Sentry.configureScope((scope) => scope.setUser(null));
+      }
+    });
+
     return MaterialApp.router(
-      title: '3FStudio',
+      title: 'Studio',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ref.watch(themeModeProvider),

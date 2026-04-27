@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/login_screen.dart';
@@ -96,6 +97,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/client/calendar',
     refreshListenable: notifier,
     redirect: notifier.redirect,
+    observers: [SentryNavigatorObserver()],
     routes: [
       // ── Auth ────────────────────────────────────────────────────────────────
       GoRoute(path: '/login', builder: (ctx, state) => const LoginScreen()),
@@ -109,6 +111,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // ── Gym Owner ────────────────────────────────────────────────────────────
       ShellRoute(
+        observers: [SentryNavigatorObserver()],
         builder: (ctx, state, child) => OwnerShell(child: child),
         routes: [
           GoRoute(path: '/owner/calendar',
@@ -151,6 +154,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // ── Staff (trainer) ──────────────────────────────────────────────────────
       ShellRoute(
+        observers: [SentryNavigatorObserver()],
         builder: (ctx, state, child) => StaffShell(child: child),
         routes: [
           GoRoute(path: '/staff/calendar',
@@ -174,6 +178,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // ── Client ───────────────────────────────────────────────────────────────
       ShellRoute(
+        observers: [SentryNavigatorObserver()],
         builder: (ctx, state, child) => ClientShell(child: child),
         routes: [
           GoRoute(path: '/client/calendar',

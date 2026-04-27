@@ -1,5 +1,5 @@
-name: three_f_studio
-description: "3F Studio — gestione prenotazioni e corsi per AL.FA.SE asd."
+name: studio
+description: "Studio — gestione prenotazioni e corsi per AL.FA.SE asd."
 publish_to: 'none'
 
 version: 1.0.0+1

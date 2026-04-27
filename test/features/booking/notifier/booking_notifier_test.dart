@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
-import 'package:three_f_studio/features/auth/providers/auth_provider.dart';
-import 'package:three_f_studio/features/booking/providers/booking_provider.dart';
-import 'package:three_f_studio/features/booking/repositories/booking_data_source.dart';
+import 'package:studio/features/auth/providers/auth_provider.dart';
+import 'package:studio/features/booking/providers/booking_provider.dart';
+import 'package:studio/features/booking/repositories/booking_data_source.dart';
 
 import '../../../helpers/provider_helpers.dart';
 

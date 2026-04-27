@@ -84,9 +84,7 @@ final _allCoursesProvider =
 
   final data = await client
       .from('courses')
-      .select(
-          'id, name, type, '
-          'users!class_owner_id(id, full_name)')
+      .select('id, name, type')
       .inFilter('studio_id', studioIds)
       .order('name');
 
