@@ -9,25 +9,22 @@ void main() {
   Directory(out).createSync(recursive: true);
 
   // ── Brand colours ────────────────────────────────────────────────────────────
-  final lightBg = ColorRgb8(0xED, 0xF2, 0xF8);  // sfondo chiaro
-  final navy    = ColorRgb8(0x0A, 0x17, 0x26);  // testo
-  final navyA   = ColorRgba8(0x0A, 0x17, 0x26, 0xFF);
-  final blue    = ColorRgb8(0x00, 0x81, 0xC8);  // bordo
+  final lime    = ColorRgb8(0xC5, 0xD8, 0x00);  // sfondo lime
+  final navy    = ColorRgb8(0x0A, 0x1A, 0x0E);  // testo navy scuro
+  final navyA   = ColorRgba8(0x0A, 0x1A, 0x0E, 0xFF);
   final clear   = ColorRgba8(0, 0, 0, 0);
 
-  // ── Full icon (light bg + navy "3F" + blue border) ───────────────────────────
+  // ── Full icon (lime bg + navy "3F") ──────────────────────────────────────────
   {
     final img = Image(width: size, height: size);
-    fill(img, color: lightBg);
-    _drawRoundRect(img, 80, 80, size - 80, size - 80,
-        radius: 90, color: blue, strokeWidth: 26);
+    fill(img, color: lime);
     _drawText3F(img, size, navy);
 
     File('$out/app_icon.png').writeAsBytesSync(encodePng(img));
     print('✓  app_icon.png');
   }
 
-  // ── Adaptive foreground (transparent bg + lime "3F") ─────────────────────────
+  // ── Adaptive foreground (transparent bg + navy "3F") ─────────────────────────
   {
     final img = Image(width: size, height: size, numChannels: 4);
     fill(img, color: clear);

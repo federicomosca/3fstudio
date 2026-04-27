@@ -46,9 +46,9 @@ class StudioApp extends ConsumerWidget {
 
     ref.listen(currentUserProvider, (_, user) {
       if (user != null) {
-        Sentry.configureScope((scope) => scope.setUser(
-              SentryUser(id: user.id, email: user.email),
-            ));
+        Sentry.configureScope(
+          (scope) => scope.setUser(SentryUser(id: user.id, email: user.email)),
+        );
       } else {
         Sentry.configureScope((scope) => scope.setUser(null));
       }
