@@ -45,3 +45,6 @@ app.*.map.json
 /android/app/release
 
 sentry.properties
+
+# Node.js
+/node_modules/
