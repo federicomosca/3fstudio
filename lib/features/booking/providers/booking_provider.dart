@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers/user_plans_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../calendar/providers/lessons_provider.dart';
 import '../logic/plan_selector.dart';
@@ -79,19 +80,8 @@ final userPendingTrialLessonsProvider = FutureProvider.autoDispose<Set<String>>(
 
 /// True se l'utente ha almeno un piano credits/unlimited attivo, o trial-by-time.
 final hasActivePlanProvider = FutureProvider.autoDispose<bool>((ref) async {
-  final user = ref.watch(currentUserProvider);
-  if (user == null) return false;
-
-  final client = ref.watch(supabaseClientProvider);
-  final now = DateTime.now().toUtc().toIso8601String();
-
-  final plans = await client
-      .from('user_plans')
-      .select('credits_remaining, plans!inner(type)')
-      .eq('user_id', user.id)
-      .or('expires_at.is.null,expires_at.gte.$now');
-
-  return (plans as List).cast<Map<String, dynamic>>().any((p) {
+  final plans = await ref.watch(userPlansProvider.future);
+  return plans.any((p) {
     final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
     if (type == 'unlimited') return true;
     if (type == 'trial') {
@@ -105,19 +95,8 @@ final hasActivePlanProvider = FutureProvider.autoDispose<bool>((ref) async {
 
 /// True se l'utente ha un piano trial-by-time attivo (unlimited entro scadenza).
 final hasTrialTimePlanProvider = FutureProvider.autoDispose<bool>((ref) async {
-  final user = ref.watch(currentUserProvider);
-  if (user == null) return false;
-
-  final client = ref.watch(supabaseClientProvider);
-  final now = DateTime.now().toUtc().toIso8601String();
-
-  final plans = await client
-      .from('user_plans')
-      .select('credits_remaining, plans!inner(type)')
-      .eq('user_id', user.id)
-      .or('expires_at.is.null,expires_at.gte.$now');
-
-  return (plans as List).cast<Map<String, dynamic>>().any((p) {
+  final plans = await ref.watch(userPlansProvider.future);
+  return plans.any((p) {
     final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
     return type == 'trial' && p['credits_remaining'] == null;
   });
@@ -125,19 +104,8 @@ final hasTrialTimePlanProvider = FutureProvider.autoDispose<bool>((ref) async {
 
 /// True se l'utente ha almeno un credito prova disponibile.
 final hasTrialCreditsProvider = FutureProvider.autoDispose<bool>((ref) async {
-  final user = ref.watch(currentUserProvider);
-  if (user == null) return false;
-
-  final client = ref.watch(supabaseClientProvider);
-  final now = DateTime.now().toUtc().toIso8601String();
-
-  final plans = await client
-      .from('user_plans')
-      .select('credits_remaining, plans!inner(type)')
-      .eq('user_id', user.id)
-      .or('expires_at.is.null,expires_at.gte.$now');
-
-  return (plans as List).cast<Map<String, dynamic>>().any((p) {
+  final plans = await ref.watch(userPlansProvider.future);
+  return plans.any((p) {
     final type = (p['plans'] as Map<String, dynamic>)['type'] as String;
     if (type != 'trial') return false;
     final credits = p['credits_remaining'] as int?;
@@ -145,22 +113,13 @@ final hasTrialCreditsProvider = FutureProvider.autoDispose<bool>((ref) async {
   });
 });
 
-// Set di course_id per cui l'utente ha almeno una prenotazione confirmed/attended
-// → determina se l'utente è "iscritto" a quel corso
+// Set di course_id coperti dai piani attivi dell'utente (solo piani corso-specifici).
+// Piani Open (course_id null) e unlimited sono già gestiti da hasActivePlanProvider.
 final userEnrolledCourseIdsProvider = FutureProvider.autoDispose<Set<String>>((ref) async {
-  final user = ref.watch(currentUserProvider);
-  if (user == null) return {};
-
-  final client = ref.watch(supabaseClientProvider);
-  final response = await client
-      .from('bookings')
-      .select('lessons!inner(course_id)')
-      .eq('user_id', user.id)
-      .inFilter('status', ['confirmed', 'attended']);
-
-  return (response as List)
-      .map<String>((b) =>
-          (b['lessons'] as Map<String, dynamic>)['course_id'] as String)
+  final plans = await ref.watch(userPlansProvider.future);
+  return plans
+      .where((p) => p['course_id'] != null)
+      .map<String>((p) => p['course_id'] as String)
       .toSet();
 });
 
@@ -278,7 +237,7 @@ class BookingNotifier extends AsyncNotifier<void> {
     }
 
     ref.invalidate(userPendingTrialLessonsProvider);
-    ref.invalidate(hasTrialCreditsProvider);
+    ref.invalidate(userPlansProvider);
     ref.invalidate(lessonsForDayProvider);
   }
 
@@ -331,6 +290,7 @@ class BookingNotifier extends AsyncNotifier<void> {
     await ds.promoteFromWaitlist(lessonId);
 
     ref.invalidate(userBookingsProvider);
+    ref.invalidate(userPlansProvider);
     ref.invalidate(lessonsForDayProvider);
     ref.invalidate(userWaitlistProvider);
   }
