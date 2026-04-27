@@ -13,24 +13,21 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await initializeDateFormatting('it_IT');
-
-  await Supabase.initialize(
-    url: SupabaseConfig.url,
-    anonKey: SupabaseConfig.anonKey,
-  );
+  await Future.wait([
+    initializeDateFormatting('it_IT'),
+    Supabase.initialize(
+      url: SupabaseConfig.url,
+      anonKey: SupabaseConfig.anonKey,
+    ),
+  ]);
 
   await SentryFlutter.init(
     (options) {
       options.dsn =
           'https://a2c2696c35f25ff0f7e8b0197712a92f@o4511285544026112.ingest.de.sentry.io/4511285546975312';
-      // Adds request headers and IP for users, for more info visit:
-      // https://docs.sentry.io/platforms/dart/guides/flutter/data-management/data-collected/
       options.sendDefaultPii = true;
-      // Set tracesSampleRate to 1.0 to capture 100% of transactions for tracing.
-      // We recommend adjusting this value in production.
-      options.tracesSampleRate = 1.0; // abbassa a 0.2 dopo l'ottimizzazione
-      options.profilesSampleRate = 1.0;
+      options.tracesSampleRate = 0.2;
+      options.profilesSampleRate = 0.1;
     },
     appRunner: () =>
         runApp(SentryWidget(child: const ProviderScope(child: StudioApp()))),

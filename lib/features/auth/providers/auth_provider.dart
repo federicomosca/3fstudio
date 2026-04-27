@@ -24,11 +24,10 @@ class AuthNotifier extends AsyncNotifier<void> {
   Future<void> signIn(String email, String password) async {
     state = const AsyncLoading();
     try {
-      await Supabase.instance.client.auth.signInWithPassword(
+      await ref.read(supabaseClientProvider).auth.signInWithPassword(
         email: email,
         password: password,
       );
-      state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
       rethrow;
@@ -36,7 +35,7 @@ class AuthNotifier extends AsyncNotifier<void> {
   }
 
   Future<void> signOut() async {
-    await Supabase.instance.client.auth.signOut();
+    await ref.read(supabaseClientProvider).auth.signOut();
   }
 }
 

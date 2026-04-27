@@ -56,12 +56,17 @@ class _RouterNotifier extends ChangeNotifier {
   }
 
   String? redirect(BuildContext context, GoRouterState state) {
-    final authAsync  = _ref.read(authStateProvider);
-    final isLoggedIn = authAsync.whenOrNull(
-            data: (s) => s.session != null) ?? false;
+    final authAsync = _ref.read(authStateProvider);
 
-    final loc          = state.matchedLocation;
-    final isLoginRoute = loc == '/login';
+    // Aspetta il primo evento auth prima di navigare: evita il flash login→home
+    if (authAsync.isLoading) return null;
+
+    final isLoggedIn = authAsync.whenOrNull(
+            data: (s) => s.session != null) ??
+        false;
+
+    final loc           = state.matchedLocation;
+    final isLoginRoute  = loc == '/login';
     final isPublicRoute = loc.startsWith('/u/');
 
     if (!isLoggedIn && !isLoginRoute) return '/login';
@@ -94,7 +99,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   final notifier = _RouterNotifier(ref);
 
   return GoRouter(
-    initialLocation: '/client/calendar',
+    initialLocation: '/login',
     refreshListenable: notifier,
     redirect: notifier.redirect,
     observers: [SentryNavigatorObserver()],
