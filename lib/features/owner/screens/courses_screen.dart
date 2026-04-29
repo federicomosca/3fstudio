@@ -97,7 +97,6 @@ class CoursesScreen extends ConsumerWidget {
             if (hasMulipleSedi) items.add(const SizedBox(height: 8));
           }
 
-          // Edge case: corsi di sedi non nel provider (es. accesso admin)
           final orphans = list.where((c) => otherIds.contains(c['studio_id'])).toList();
           if (orphans.isNotEmpty) {
             for (final c in orphans) {

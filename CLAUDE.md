@@ -13,7 +13,6 @@ App Flutter per la gestione di prenotazioni e corsi di **AL.FA.SE asd** — due 
 
 | Ruolo | Accesso |
 |---|---|
-| `admin` | Pannello globale (multi-studio) |
 | `gym_owner` | Dashboard owner, CRUD sale/corsi/team/clienti/piani |
 | `class_owner` | Staff shell — responsabile di uno o più corsi |
 | `trainer` | Staff shell — vede solo le proprie lezioni |
@@ -27,20 +26,6 @@ Un utente può avere più ruoli contemporaneamente (es. Vincenzo è owner + clas
 
 - **Sede 1**: Via Aquileia, 34 – Palermo (principale)
 - **Sede 2**: Via Regione Siciliana, 3604 – Palermo
-
-## Brand
-
-- Nome app: **3F Training**
-- Logo: cerchio azzurro chiaro (`#EDF2F8`), testo "3F" blu medio, scritta "TRAINING" navy scuro, archi e triangoli cyan
-- Palette principale:
-  - `navy   = #0A1A0E` — sfondo scuro, AppBar, NavBar (verde foresta)
-  - `blue   = #1EA850` — accento principale (verde)
-  - `cyan   = #50D080` — accento secondario (verde chiaro)
-  - `lightBg = #EDF7EF` — sfondo light mode
-- Alias per retrocompatibilità: `charcoal = navy`, `lime = blue`
-- **Dark mode forzata** (`ThemeMode.dark` in main.dart)
-- Tagline: *"Qui non ti alleni. Impari ad allenarti."*
-- Stile fitness: kettlebell, flow motion, corpo libero, calisthenics, pesistica, cardio
 
 ## Struttura progetto
 
@@ -60,9 +45,8 @@ lib/
     profile/        # ProfileScreen (staff editabile / client sola lettura)
                     # PublicProfileScreen (/u/:userId)
     staff/          # StaffCalendarScreen, RosterScreen, MyCoursesScreen
-    admin/          # AdminDashboard, StudiosScreen, GlobalUsersScreen
   shared/
-    widgets/        # Shell (Admin/Owner/Staff/Client), LessonCard, ComingSoon
+    widgets/        # Shell (Owner/Staff/Client), LessonCard, ComingSoon
 assets/
   icon/             # app_icon.png, app_icon_fg.png (1024×1024, generati da Dart)
 tool/
@@ -95,10 +79,6 @@ Colonne aggiuntive su `public.users`:
 ```
 /login
 /u/:userId                        ← profilo pubblico (bypass auth redirect)
-
-/admin/dashboard
-/admin/studios
-/admin/users
 
 /owner/dashboard
 /owner/courses                    ← lista corsi
